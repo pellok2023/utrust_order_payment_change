@@ -1,0 +1,540 @@
+/**
+ * UTrust Order Payment Change 管理頁面 JavaScript
+ */
+
+jQuery(document).ready(function($) {
+    
+    // 全域變數
+    var currentAccountId = null;
+    var isEditMode = false;
+    
+    // 初始化對話框
+    $('#utopc-account-dialog').dialog({
+        autoOpen: false,
+        modal: true,
+        width: 600,
+        close: function() {
+            resetForm();
+        }
+    });
+    
+    $('#utopc-logs-dialog').dialog({
+        autoOpen: false,
+        modal: true,
+        width: 800,
+        height: 600
+    });
+    
+    $('#utopc-delete-plugin-dialog').dialog({
+        autoOpen: false,
+        modal: true,
+        width: 600,
+        resizable: false,
+        close: function() {
+            // 重置確認狀態
+            $('#utopc-confirm-delete-checkbox').prop('checked', false);
+            $('#utopc-confirm-delete').prop('disabled', true);
+        }
+    });
+    
+    $('#utopc-delete-last-account-dialog').dialog({
+        autoOpen: false,
+        modal: true,
+        width: 600,
+        resizable: false,
+        close: function() {
+            // 重置確認狀態
+            $('#utopc-confirm-delete-last-checkbox').prop('checked', false);
+            $('#utopc-confirm-delete-last').prop('disabled', true);
+        }
+    });
+    
+    // 新增帳號按鈕
+    $('#utopc-add-account').on('click', function() {
+        isEditMode = false;
+        $('#utopc-account-dialog').dialog('open');
+        $('#is_active_row').show();
+    });
+    
+    // 編輯帳號按鈕
+    $(document).on('click', '.edit-account', function() {
+        var accountId = $(this).data('id');
+        loadAccountData(accountId);
+        isEditMode = true;
+        $('#utopc-account-dialog').dialog('open');
+        $('#is_active_row').hide();
+    });
+    
+    // 啟用帳號按鈕
+    $(document).on('click', '.activate-account', function() {
+        var accountId = $(this).data('id');
+        if (confirm(utopc_ajax.strings.confirm_activate)) {
+            activateAccount(accountId);
+        }
+    });
+    
+    // 刪除帳號按鈕
+    $(document).on('click', '.delete-account', function() {
+        var accountId = $(this).data('id');
+        var isActive = $(this).data('is-active');
+        var isLast = $(this).data('is-last');
+        
+        // 如果是最後一筆帳號，顯示特殊確認對話框
+        if (isLast == '1') {
+            $('#utopc-delete-last-account-dialog').dialog('open');
+            $('#utopc-delete-last-account-dialog').data('account-id', accountId);
+        } else if (isActive == '1') {
+            // 如果是啟用中的帳號但不是最後一筆，顯示警告
+            if (confirm('此帳號目前正在使用中，刪除後將切換到其他帳號。確定要刪除嗎？')) {
+                deleteAccount(accountId);
+            }
+        } else {
+            // 一般刪除確認
+            if (confirm(utopc_ajax.strings.confirm_delete)) {
+                deleteAccount(accountId);
+            }
+        }
+    });
+    
+    // 重置當月金額按鈕
+    $('#utopc-reset-monthly').on('click', function() {
+        if (confirm(utopc_ajax.strings.confirm_reset)) {
+            resetMonthlyAmounts();
+        }
+    });
+    
+    // 查看日誌按鈕
+    $('#utopc-view-logs').on('click', function() {
+        $('#utopc-logs-dialog').dialog('open');
+        loadLogs();
+    });
+    
+    // 移除外掛按鈕
+    $('#utopc-delete-plugin').on('click', function() {
+        $('#utopc-delete-plugin-dialog').dialog('open');
+    });
+    
+    // 確認刪除複選框
+    $('#utopc-confirm-delete-checkbox').on('change', function() {
+        $('#utopc-confirm-delete').prop('disabled', !$(this).is(':checked'));
+    });
+    
+    // 確認刪除按鈕
+    $('#utopc-confirm-delete').on('click', function() {
+        if ($('#utopc-confirm-delete-checkbox').is(':checked')) {
+            confirmPluginDeletion();
+        }
+    });
+    
+    // 確認刪除最後一筆帳號複選框
+    $('#utopc-confirm-delete-last-checkbox').on('change', function() {
+        $('#utopc-confirm-delete-last').prop('disabled', !$(this).is(':checked'));
+    });
+    
+    // 確認刪除最後一筆帳號按鈕
+    $('#utopc-confirm-delete-last').on('click', function() {
+        if ($('#utopc-confirm-delete-last-checkbox').is(':checked')) {
+            var accountId = $('#utopc-delete-last-account-dialog').data('account-id');
+            $('#utopc-delete-last-account-dialog').dialog('close');
+            deleteAccount(accountId);
+        }
+    });
+    
+    // 清除日誌按鈕
+    $(document).on('click', '#utopc-clear-logs', function() {
+        if (confirm('確定要清除所有日誌嗎？')) {
+            clearLogs();
+        }
+    });
+    
+    // 重新整理日誌按鈕
+    $(document).on('click', '#utopc-refresh-logs', function() {
+        loadLogs();
+    });
+    
+    // 表單提交
+    $('#utopc-account-form').on('submit', function(e) {
+        e.preventDefault();
+        
+        if (isEditMode) {
+            updateAccount();
+        } else {
+            addAccount();
+        }
+    });
+    
+    /**
+     * 載入帳號資料
+     */
+    function loadAccountData(accountId) {
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_get_account',
+                id: accountId,
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    var account = response.data;
+                    fillAccountForm(account);
+                    currentAccountId = accountId;
+                } else {
+                    showError('載入帳號資料失敗：' + response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('載入帳號資料時發生錯誤');
+            }
+        });
+    }
+    
+    /**
+     * 填寫帳號表單
+     */
+    function fillAccountForm(account) {
+        $('#account_id').val(account.id);
+        $('#account_name').val(account.account_name);
+        $('#merchant_id').val(account.merchant_id);
+        $('#hash_key').val(account.hash_key);
+        $('#hash_iv').val(account.hash_iv);
+        $('#amount_limit').val(account.amount_limit);
+        $('#is_active').prop('checked', account.is_active == 1);
+    }
+    
+    /**
+     * 新增帳號
+     */
+    function addAccount() {
+        var formData = $('#utopc-account-form').serialize();
+        formData += '&action=utopc_add_account&nonce=' + utopc_ajax.nonce;
+        
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: formData,
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    showSuccess(response.data);
+                    $('#utopc-account-dialog').dialog('close');
+                    location.reload();
+                } else {
+                    showError(response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('新增帳號時發生錯誤');
+            }
+        });
+    }
+    
+    /**
+     * 更新帳號
+     */
+    function updateAccount() {
+        var formData = $('#utopc-account-form').serialize();
+        formData += '&action=utopc_update_account&nonce=' + utopc_ajax.nonce;
+        
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: formData,
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    showSuccess(response.data);
+                    $('#utopc-account-dialog').dialog('close');
+                    location.reload();
+                } else {
+                    showError(response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('更新帳號時發生錯誤');
+            }
+        });
+    }
+    
+    /**
+     * 啟用帳號
+     */
+    function activateAccount(accountId) {
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_activate_account',
+                id: accountId,
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    showSuccess(response.data);
+                    location.reload();
+                } else {
+                    showError(response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('啟用帳號時發生錯誤');
+            }
+        });
+    }
+    
+    /**
+     * 刪除帳號
+     */
+    function deleteAccount(accountId) {
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_delete_account',
+                id: accountId,
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    showSuccess(response.data);
+                    location.reload();
+                } else {
+                    showError(response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('刪除帳號時發生錯誤');
+            }
+        });
+    }
+    
+    /**
+     * 重置當月金額
+     */
+    function resetMonthlyAmounts() {
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_reset_monthly',
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    showSuccess(response.data);
+                    location.reload();
+                } else {
+                    showError(response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('重置當月金額時發生錯誤');
+            }
+        });
+    }
+    
+    /**
+     * 載入日誌
+     */
+    function loadLogs() {
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_get_logs',
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    displayLogs(response.data);
+                } else {
+                    showError('載入日誌失敗：' + response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('載入日誌時發生錯誤');
+            }
+        });
+    }
+    
+    /**
+     * 顯示日誌
+     */
+    function displayLogs(logs) {
+        var logsHtml = '';
+        
+        if (logs.length === 0) {
+            logsHtml = '<p>沒有日誌記錄</p>';
+        } else {
+            logsHtml = '<table class="wp-list-table widefat fixed striped">';
+            logsHtml += '<thead><tr><th>時間</th><th>等級</th><th>模組</th><th>訊息</th></tr></thead><tbody>';
+            
+            logs.forEach(function(log) {
+                var levelClass = 'log-' + log.level.toLowerCase();
+                logsHtml += '<tr class="' + levelClass + '">';
+                logsHtml += '<td>' + log.timestamp + '</td>';
+                logsHtml += '<td><span class="log-level ' + levelClass + '">' + log.level + '</span></td>';
+                logsHtml += '<td>' + (log.module || '-') + '</td>';
+                logsHtml += '<td>' + log.message + '</td>';
+                logsHtml += '</tr>';
+            });
+            
+            logsHtml += '</tbody></table>';
+        }
+        
+        $('.utopc-logs-list').html(logsHtml);
+    }
+    
+    /**
+     * 清除日誌
+     */
+    function clearLogs() {
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_clear_logs',
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    showSuccess('日誌清除成功');
+                    loadLogs();
+                } else {
+                    showError(response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('清除日誌時發生錯誤');
+            }
+        });
+    }
+    
+    /**
+     * 重置表單
+     */
+    function resetForm() {
+        $('#utopc-account-form')[0].reset();
+        $('#account_id').val('');
+        currentAccountId = null;
+        isEditMode = false;
+    }
+    
+    /**
+     * 顯示載入指示器
+     */
+    function showLoading() {
+        $('#utopc-loading').show();
+    }
+    
+    /**
+     * 隱藏載入指示器
+     */
+    function hideLoading() {
+        $('#utopc-loading').hide();
+    }
+    
+    /**
+     * 顯示成功訊息
+     */
+    function showSuccess(message) {
+        // 使用 WordPress 內建的通知系統
+        var notice = $('<div class="notice notice-success is-dismissible"><p>' + message + '</p></div>');
+        $('.wrap h1').after(notice);
+        
+        // 自動隱藏通知
+        setTimeout(function() {
+            notice.fadeOut();
+        }, 3000);
+    }
+    
+    /**
+     * 顯示錯誤訊息
+     */
+    function showError(message) {
+        // 使用 WordPress 內建的通知系統
+        var notice = $('<div class="notice notice-error is-dismissible"><p>' + message + '</p></div>');
+        $('.wrap h1').after(notice);
+        
+        // 自動隱藏通知
+        setTimeout(function() {
+            notice.fadeOut();
+        }, 5000);
+    }
+    
+    /**
+     * 確認外掛刪除
+     */
+    function confirmPluginDeletion() {
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_confirm_deletion',
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    showSuccess(response.data);
+                    $('#utopc-delete-plugin-dialog').dialog('close');
+                    
+                    // 顯示後續指示
+                    setTimeout(function() {
+                        var notice = $('<div class="notice notice-info is-dismissible"><p><strong>下一步：</strong>請前往 <a href="' + utopc_ajax.ajax_url.replace('admin-ajax.php', 'plugins.php') + '">外掛管理頁面</a> 刪除此外掛檔案。</p></div>');
+                        $('.wrap h1').after(notice);
+                    }, 2000);
+                } else {
+                    showError(response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('確認刪除時發生錯誤');
+            }
+        });
+    }
+    
+});
