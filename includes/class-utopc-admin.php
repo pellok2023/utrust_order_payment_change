@@ -370,33 +370,66 @@ class UTOPC_Admin {
         $atts = shortcode_atts(array(
             'show_company_name' => 'true',
             'show_tax_id' => 'true',
-            'show_address' => 'true',
             'show_phone' => 'true',
+            'show_customer_service' => 'true',
+            'show_business_cooperation' => 'true',
+            'show_copyright' => 'true',
+            'use_default' => 'false', // 是否強制使用預設資訊
             'class' => 'utopc-company-info'
         ), $atts);
         
-        $company_info = $this->database->get_active_account_company_info();
+        // 預設公司資訊（又上財務規劃顧問股份有限公司）
+        $default_company_info = array(
+            'company_name' => '又上財務規劃顧問股份有限公司',
+            'tax_id' => '83242378',
+            'phone' => '02-2509-2809',
+            'customer_service' => 'service@utrustcorp.com',
+            'business_cooperation' => 'info_bd@utrustcorp.com',
+            'copyright_year' => '2025'
+        );
         
+        // 取得當前金流帳戶資訊
+        $company_info = null;
+        if ($atts['use_default'] !== 'true') {
+            $company_info = $this->database->get_active_account_company_info();
+        }
+        
+        // 如果沒有啟用的帳戶或強制使用預設值，則使用預設資訊
         if ($company_info === null) {
-            return '<div class="' . esc_attr($atts['class']) . '">' . __('目前沒有啟用的金流帳戶', 'utrust-order-payment-change') . '</div>';
+            $company_info = $default_company_info;
+        } else {
+            // 合併預設資訊，確保所有必要欄位都有值
+            $company_info = array_merge($default_company_info, $company_info);
         }
         
-        $html = '<div class="' . esc_attr($atts['class']) . '">';
+        $html = '<div class="' . esc_attr($atts['class']) . '" style="color: white; text-align: left; ">';
         
-        if ($atts['show_company_name'] === 'true' && !empty($company_info['company_name'])) {
-            $html .= '<div class="company-name"><strong>' . __('公司名稱：', 'utrust-order-payment-change') . '</strong>' . esc_html($company_info['company_name']) . '</div>';
+        // 聯絡我們標題
+        $html .= '<div class="contact-title" style="font-size: 16px; color: white;"><strong style="font-size: 14pt;">聯絡我們</strong></div>';
+        
+        // 版權資訊
+        if ($atts['show_copyright'] === 'true') {
+            $html .= '<div class="copyright" style="font-size: 16px; color: white;">' . $company_info['copyright_year'] . ' © ' . $company_info['company_name'] . '</div>';
         }
         
-        if ($atts['show_tax_id'] === 'true' && !empty($company_info['tax_id'])) {
-            $html .= '<div class="tax-id"><strong>' . __('統一編號：', 'utrust-order-payment-change') . '</strong>' . esc_html($company_info['tax_id']) . '</div>';
-        }
-        
-        if ($atts['show_address'] === 'true' && !empty($company_info['address'])) {
-            $html .= '<div class="address"><strong>' . __('地址：', 'utrust-order-payment-change') . '</strong>' . esc_html($company_info['address']) . '</div>';
-        }
-        
+        // 電話
         if ($atts['show_phone'] === 'true' && !empty($company_info['phone'])) {
-            $html .= '<div class="phone"><strong>' . __('電話：', 'utrust-order-payment-change') . '</strong>' . esc_html($company_info['phone']) . '</div>';
+            $html .= '<div class="phone" style="font-size: 16px; color: white;">' . esc_html($company_info['phone']) . '</div>';
+        }
+        
+        // 客服信箱
+        if ($atts['show_customer_service'] === 'true' && !empty($company_info['customer_service'])) {
+            $html .= '<div class="customer-service" style="font-size: 16px; color: white;">客服：<a href="mailto:' . esc_attr($company_info['customer_service']) . '" style="color: white; text-decoration: none;">' . esc_html($company_info['customer_service']) . '</a></div>';
+        }
+        
+        // 商業合作信箱
+        if ($atts['show_business_cooperation'] === 'true' && !empty($company_info['business_cooperation'])) {
+            $html .= '<div class="business-cooperation" style="font-size: 16px; color: white;">商業合作：<a href="mailto:' . esc_attr($company_info['business_cooperation']) . '" style="color: white; text-decoration: none;">' . esc_html($company_info['business_cooperation']) . '</a></div>';
+        }
+        
+        // 統一編號
+        if ($atts['show_tax_id'] === 'true' && !empty($company_info['tax_id'])) {
+            $html .= '<div class="tax-id" style="font-size: 16px; color: white;">統一編號：' . esc_html($company_info['tax_id']) . '</div>';
         }
         
         $html .= '</div>';
