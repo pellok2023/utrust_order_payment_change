@@ -72,6 +72,10 @@ $reset_stats = $monthly_reset->get_reset_stats();
             <?php _e('重置當月金額', 'utrust-order-payment-change'); ?>
         </button>
         
+        <button type="button" class="button button-primary" id="utopc-calculate-monthly">
+            <?php _e('計算當月使用量', 'utrust-order-payment-change'); ?>
+        </button>
+        
         <button type="button" class="button button-secondary" id="utopc-view-logs">
             <?php _e('查看日誌', 'utrust-order-payment-change'); ?>
         </button>
@@ -94,6 +98,7 @@ $reset_stats = $monthly_reset->get_reset_stats();
                 <thead>
                     <tr>
                         <th><?php _e('帳號名稱', 'utrust-order-payment-change'); ?></th>
+                        <th><?php _e('公司名稱', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('MerchantID', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('金額上限', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('當月累計', 'utrust-order-payment-change'); ?></th>
@@ -106,6 +111,7 @@ $reset_stats = $monthly_reset->get_reset_stats();
                     <?php foreach ($accounts as $account): ?>
                         <tr>
                             <td><?php echo esc_html($account->account_name); ?></td>
+                            <td><?php echo esc_html($account->company_name ?: '-'); ?></td>
                             <td><?php echo esc_html($account->merchant_id); ?></td>
                             <td>NT$ <?php echo number_format($account->amount_limit, 2); ?></td>
                             <td>NT$ <?php echo number_format($account->monthly_amount, 2); ?></td>
@@ -210,6 +216,56 @@ $reset_stats = $monthly_reset->get_reset_stats();
                 <td>
                     <input type="number" id="amount_limit" name="amount_limit" class="regular-text" step="0.01" min="0" required>
                     <p class="description"><?php _e('設定此帳號的月度金額上限', 'utrust-order-payment-change'); ?></p>
+                </td>
+            </tr>
+            
+            <tr id="monthly_amount_row" style="display: none;">
+                <th scope="row">
+                    <label for="monthly_amount"><?php _e('當月累計', 'utrust-order-payment-change'); ?></label>
+                </th>
+                <td>
+                    <input type="number" id="monthly_amount" name="monthly_amount" class="regular-text" step="0.01" min="0">
+                    <p class="description"><?php _e('此帳號的當月累計金額（可手動調整）', 'utrust-order-payment-change'); ?></p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">
+                    <label for="company_name"><?php _e('公司名稱', 'utrust-order-payment-change'); ?></label>
+                </th>
+                <td>
+                    <input type="text" id="company_name" name="company_name" class="regular-text">
+                    <p class="description"><?php _e('金流帳號所屬公司名稱', 'utrust-order-payment-change'); ?></p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">
+                    <label for="tax_id"><?php _e('統一編號', 'utrust-order-payment-change'); ?></label>
+                </th>
+                <td>
+                    <input type="text" id="tax_id" name="tax_id" class="regular-text" maxlength="8">
+                    <p class="description"><?php _e('公司統一編號（8位數字）', 'utrust-order-payment-change'); ?></p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">
+                    <label for="address"><?php _e('地址', 'utrust-order-payment-change'); ?></label>
+                </th>
+                <td>
+                    <textarea id="address" name="address" class="large-text" rows="3"></textarea>
+                    <p class="description"><?php _e('公司地址', 'utrust-order-payment-change'); ?></p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">
+                    <label for="phone"><?php _e('電話', 'utrust-order-payment-change'); ?></label>
+                </th>
+                <td>
+                    <input type="text" id="phone" name="phone" class="regular-text">
+                    <p class="description"><?php _e('公司聯絡電話', 'utrust-order-payment-change'); ?></p>
                 </td>
             </tr>
             

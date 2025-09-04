@@ -57,6 +57,10 @@ class UTOPC_Database {
             hash_iv varchar(255) NOT NULL,
             amount_limit decimal(15,2) NOT NULL DEFAULT 0.00,
             monthly_amount decimal(15,2) NOT NULL DEFAULT 0.00,
+            company_name varchar(255) DEFAULT NULL,
+            tax_id varchar(20) DEFAULT NULL,
+            address text DEFAULT NULL,
+            phone varchar(50) DEFAULT NULL,
             is_active tinyint(1) NOT NULL DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -77,6 +81,38 @@ class UTOPC_Database {
     public static function ensure_tables_exist() {
         if (!self::table_exists()) {
             self::create_tables();
+        } else {
+            // 檢查並升級現有資料表結構
+            self::upgrade_table_if_needed();
+        }
+    }
+    
+    /**
+     * 升級資料表結構（如果需要）
+     */
+    public static function upgrade_table_if_needed() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'utopc_payment_accounts';
+        
+        // 檢查新欄位是否存在
+        $columns_to_add = array(
+            'company_name' => 'varchar(255) DEFAULT NULL',
+            'tax_id' => 'varchar(20) DEFAULT NULL', 
+            'address' => 'text DEFAULT NULL',
+            'phone' => 'varchar(50) DEFAULT NULL'
+        );
+        
+        foreach ($columns_to_add as $column_name => $column_definition) {
+            $column_exists = $wpdb->get_results($wpdb->prepare(
+                "SHOW COLUMNS FROM $table_name LIKE %s",
+                $column_name
+            ));
+            
+            if (empty($column_exists)) {
+                $wpdb->query("ALTER TABLE $table_name ADD COLUMN $column_name $column_definition");
+                error_log("UTOPC: 已添加欄位 $column_name 到資料表 $table_name");
+            }
         }
     }
     
@@ -262,6 +298,10 @@ class UTOPC_Database {
             'hash_iv' => '',
             'amount_limit' => 0.00,
             'monthly_amount' => 0.00,
+            'company_name' => '',
+            'tax_id' => '',
+            'address' => '',
+            'phone' => '',
             'is_active' => 0
         );
         
@@ -287,9 +327,13 @@ class UTOPC_Database {
                 'hash_iv' => sanitize_text_field($data['hash_iv']),
                 'amount_limit' => floatval($data['amount_limit']),
                 'monthly_amount' => floatval($data['monthly_amount']),
+                'company_name' => sanitize_text_field($data['company_name']),
+                'tax_id' => sanitize_text_field($data['tax_id']),
+                'address' => sanitize_textarea_field($data['address']),
+                'phone' => sanitize_text_field($data['phone']),
                 'is_active' => intval($data['is_active'])
             ),
-            array('%s', '%s', '%s', '%s', '%f', '%f', '%d')
+            array('%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s', '%d')
         );
         
         if ($result === false) {
@@ -356,6 +400,26 @@ class UTOPC_Database {
         if (isset($data['monthly_amount'])) {
             $update_data['monthly_amount'] = floatval($data['monthly_amount']);
             $update_format[] = '%f';
+        }
+        
+        if (isset($data['company_name'])) {
+            $update_data['company_name'] = sanitize_text_field($data['company_name']);
+            $update_format[] = '%s';
+        }
+        
+        if (isset($data['tax_id'])) {
+            $update_data['tax_id'] = sanitize_text_field($data['tax_id']);
+            $update_format[] = '%s';
+        }
+        
+        if (isset($data['address'])) {
+            $update_data['address'] = sanitize_textarea_field($data['address']);
+            $update_format[] = '%s';
+        }
+        
+        if (isset($data['phone'])) {
+            $update_data['phone'] = sanitize_text_field($data['phone']);
+            $update_format[] = '%s';
         }
         
         if (isset($data['is_active'])) {
@@ -453,6 +517,33 @@ class UTOPC_Database {
         
         return $wpdb->get_row(
             "SELECT * FROM {$this->table_name} WHERE is_active = 1 LIMIT 1"
+        );
+    }
+    
+    /**
+     * 取得目前啟用帳戶的公司資訊
+     */
+    public function get_active_account_company_info() {
+        global $wpdb;
+        
+        $account = $wpdb->get_row(
+            "SELECT company_name, tax_id, address, phone, account_name, merchant_id 
+             FROM {$this->table_name} 
+             WHERE is_active = 1 
+             LIMIT 1"
+        );
+        
+        if (!$account) {
+            return null;
+        }
+        
+        return array(
+            'company_name' => $account->company_name ?: '',
+            'tax_id' => $account->tax_id ?: '',
+            'address' => $account->address ?: '',
+            'phone' => $account->phone ?: '',
+            'account_name' => $account->account_name ?: '',
+            'merchant_id' => $account->merchant_id ?: ''
         );
     }
     
@@ -588,6 +679,316 @@ class UTOPC_Database {
         }
         
         return $updated;
+    }
+    
+    /**
+     * 計算當月訂單金流使用量統計
+     * 根據 RY WooCommerce Tools 的日誌檔案來統計
+     */
+    public function calculate_monthly_usage() {
+        // 計算一個月前的日期
+        $one_month_ago = date('Y-m-d H:i:s', strtotime('-1 month'));
+        
+        // 取得所有金流帳號
+        $accounts = $this->get_all_accounts();
+        $results = array();
+        
+        // 解析日誌檔案
+        $log_data = $this->parse_newebpay_logs($one_month_ago);
+        
+        foreach ($accounts as $account) {
+            $merchant_id = $account->merchant_id;
+            $account_id = $account->id;
+            
+            // 根據 merchant_id 計算總金額
+            $total_amount = $this->calculate_account_usage_from_logs($merchant_id, $log_data);
+            
+            // 更新該帳號的 monthly_amount
+            $update_result = $this->update_account_monthly_amount($account_id, $total_amount);
+            
+            $results[] = array(
+                'account_id' => $account_id,
+                'account_name' => $account->account_name,
+                'merchant_id' => $merchant_id,
+                'monthly_amount' => $total_amount,
+                'update_success' => $update_result
+            );
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * 解析 NewebPay 日誌檔案
+     */
+    private function parse_newebpay_logs($start_date) {
+        $log_data = array();
+        
+        // 取得日誌檔案路徑
+        $log_files = $this->get_newebpay_log_files();
+        
+        foreach ($log_files as $log_file) {
+            if (!file_exists($log_file)) {
+                continue;
+            }
+            
+            $file_content = file_get_contents($log_file);
+            $lines = explode("\n", $file_content);
+            
+            foreach ($lines as $line) {
+                if (empty(trim($line))) {
+                    continue;
+                }
+                
+                // 解析日誌行
+                $log_entry = $this->parse_log_line($line, $start_date);
+                if ($log_entry) {
+                    $log_data[] = $log_entry;
+                }
+            }
+        }
+        
+        return $log_data;
+    }
+    
+    /**
+     * 取得 NewebPay 日誌檔案列表
+     */
+    private function get_newebpay_log_files() {
+        $log_files = array();
+        
+        // 檢查主要的日誌目錄
+        $log_dirs = array(
+            WP_CONTENT_DIR . '/uploads/wc-logs/',
+            WP_CONTENT_DIR . '/updraft/uploads-old/wc-logs/'
+        );
+        
+        foreach ($log_dirs as $log_dir) {
+            if (!is_dir($log_dir)) {
+                continue;
+            }
+            
+            $files = glob($log_dir . 'ry_newebpay_gateway-*.log');
+            $log_files = array_merge($log_files, $files);
+        }
+        
+        return $log_files;
+    }
+    
+    /**
+     * 解析單一日誌行
+     */
+    private function parse_log_line($line, $start_date) {
+        // 檢查是否包含 "IPN decrypt request"
+        if (strpos($line, 'IPN decrypt request') === false) {
+            return null;
+        }
+        
+        // 解析時間戳
+        if (!preg_match('/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+\d{2}:\d{2})/', $line, $matches)) {
+            return null;
+        }
+        
+        $log_time = $matches[1];
+        $log_timestamp = strtotime($log_time);
+        $start_timestamp = strtotime($start_date);
+        
+        // 檢查是否在時間範圍內
+        if ($log_timestamp < $start_timestamp) {
+            return null;
+        }
+        
+        // 解析日誌內容
+        $log_entry = $this->extract_log_data($line);
+        if ($log_entry) {
+            $log_entry['timestamp'] = $log_time;
+            return $log_entry;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 從日誌行中提取資料
+     */
+    private function extract_log_data($line) {
+        // 尋找 MerchantID
+        if (!preg_match("/'MerchantID' => '([^']+)'/", $line, $merchant_matches)) {
+            return null;
+        }
+        
+        $merchant_id = $merchant_matches[1];
+        
+        // 尋找 Amt (金額)
+        if (!preg_match("/'Amt' => (\d+)/", $line, $amt_matches)) {
+            return null;
+        }
+        
+        $amount = intval($amt_matches[1]);
+        
+        // 尋找 PayTime
+        $pay_time = null;
+        if (preg_match("/'PayTime' => '([^']+)'/", $line, $paytime_matches)) {
+            $pay_time = $paytime_matches[1];
+        }
+        
+        // 尋找 TradeNo
+        $trade_no = null;
+        if (preg_match("/'TradeNo' => '([^']+)'/", $line, $tradeno_matches)) {
+            $trade_no = $tradeno_matches[1];
+        }
+        
+        // 尋找 MerchantOrderNo
+        $merchant_order_no = null;
+        if (preg_match("/'MerchantOrderNo' => '([^']+)'/", $line, $order_matches)) {
+            $merchant_order_no = $order_matches[1];
+        }
+        
+        return array(
+            'merchant_id' => $merchant_id,
+            'amount' => $amount,
+            'pay_time' => $pay_time,
+            'trade_no' => $trade_no,
+            'merchant_order_no' => $merchant_order_no
+        );
+    }
+    
+    /**
+     * 根據日誌資料計算指定 merchant_id 的使用量
+     */
+    private function calculate_account_usage_from_logs($merchant_id, $log_data) {
+        $total_amount = 0;
+        $processed_trades = array(); // 避免重複計算同一筆交易
+        
+        foreach ($log_data as $log_entry) {
+            // 檢查是否為指定的 merchant_id
+            if ($log_entry['merchant_id'] !== $merchant_id) {
+                continue;
+            }
+            
+            // 使用 TradeNo 來避免重複計算
+            $trade_no = $log_entry['trade_no'];
+            if ($trade_no && in_array($trade_no, $processed_trades)) {
+                continue;
+            }
+            
+            // 累加金額
+            $total_amount += $log_entry['amount'];
+            
+            // 記錄已處理的交易
+            if ($trade_no) {
+                $processed_trades[] = $trade_no;
+            }
+        }
+        
+        return $total_amount;
+    }
+    
+    /**
+     * 取得指定 merchant_id 在指定時間範圍內的訂單總金額
+     */
+    private function get_monthly_orders_amount($merchant_id, $start_date) {
+        global $wpdb;
+        
+        // 查詢使用 NewebPay 相關金流的訂單
+        $newebpay_gateways = array(
+            'ry_newebpay',
+            'ry_newebpay_atm', 
+            'ry_newebpay_cc',
+            'ry_newebpay_cvs',
+            'ry_newebpay_webatm'
+        );
+        
+        $gateway_placeholders = implode(',', array_fill(0, count($newebpay_gateways), '%s'));
+        
+        // 查詢訂單，根據 payment method 和 meta 資料中的 merchant 資訊
+        // 使用 _order_total 而不是 post_excerpt 來取得正確的訂單金額
+        $query = $wpdb->prepare("
+            SELECT SUM(CAST(pm_total.meta_value AS DECIMAL(15,2))) as total_amount
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm_method ON p.ID = pm_method.post_id
+            INNER JOIN {$wpdb->postmeta} pm_merchant ON p.ID = pm_merchant.post_id
+            INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status IN ('wc-processing', 'wc-completed', 'wc-on-hold')
+            AND p.post_date >= %s
+            AND pm_method.meta_key = '_payment_method'
+            AND pm_method.meta_value IN ($gateway_placeholders)
+            AND pm_merchant.meta_key = '_newebpay_MerchantOrderNo'
+            AND pm_merchant.meta_value LIKE %s
+            AND pm_total.meta_key = '_order_total'
+        ", array_merge([$start_date], $newebpay_gateways, ["%{$merchant_id}%"]));
+        
+        $result = $wpdb->get_var($query);
+        
+        // 如果沒有找到，嘗試另一種查詢方式
+        if (!$result) {
+            $result = $this->get_monthly_orders_amount_alternative($merchant_id, $start_date);
+        }
+        
+        return floatval($result ?: 0);
+    }
+    
+    /**
+     * 替代查詢方式：根據當前 merchant_id 設定查詢
+     * 這個方法會查詢在指定時間範圍內，當 merchant_id 為當前值時的所有訂單
+     */
+    private function get_monthly_orders_amount_alternative($merchant_id, $start_date) {
+        global $wpdb;
+        
+        // 查詢在指定時間範圍內，當 RY_WT_newebpay_gateway_MerchantID 為當前 merchant_id 時的訂單
+        // 由於我們無法直接從訂單中取得當時使用的 merchant_id，我們採用以下策略：
+        // 1. 查詢所有 NewebPay 訂單
+        // 2. 根據訂單時間和當前 merchant_id 的啟用時間來判斷
+        
+        $query = $wpdb->prepare("
+            SELECT SUM(CAST(pm_total.meta_value AS DECIMAL(15,2))) as total_amount
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm_method ON p.ID = pm_method.post_id
+            INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status IN ('wc-processing', 'wc-completed', 'wc-on-hold')
+            AND p.post_date >= %s
+            AND pm_method.meta_key = '_payment_method'
+            AND pm_method.meta_value LIKE 'ry_newebpay%'
+            AND pm_total.meta_key = '_order_total'
+        ", $start_date);
+        
+        $result = $wpdb->get_var($query);
+        
+        // 如果查詢到結果，我們需要進一步過濾
+        // 這裡我們假設如果當前 merchant_id 是啟用的，那麼最近的訂單都使用這個 merchant_id
+        if ($result) {
+            // 檢查當前 merchant_id 是否為啟用狀態
+            $current_merchant_id = get_option('RY_WT_newebpay_gateway_MerchantID', '');
+            if ($current_merchant_id === $merchant_id) {
+                // 如果當前 merchant_id 是啟用的，返回查詢結果
+                return floatval($result);
+            } else {
+                // 如果不是當前啟用的 merchant_id，返回 0
+                // 因為我們無法準確判斷歷史訂單使用的是哪個 merchant_id
+                return 0;
+            }
+        }
+        
+        return floatval($result ?: 0);
+    }
+    
+    /**
+     * 更新指定帳號的當月累計金額
+     */
+    private function update_account_monthly_amount($account_id, $amount) {
+        global $wpdb;
+        
+        $result = $wpdb->update(
+            $this->table_name,
+            array('monthly_amount' => $amount),
+            array('id' => $account_id),
+            array('%f'),
+            array('%d')
+        );
+        
+        return $result !== false;
     }
     
     /**

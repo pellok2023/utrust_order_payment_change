@@ -54,6 +54,7 @@ jQuery(document).ready(function($) {
         isEditMode = false;
         $('#utopc-account-dialog').dialog('open');
         $('#is_active_row').show();
+        $('#monthly_amount_row').hide();
     });
     
     // 編輯帳號按鈕
@@ -63,6 +64,7 @@ jQuery(document).ready(function($) {
         isEditMode = true;
         $('#utopc-account-dialog').dialog('open');
         $('#is_active_row').hide();
+        $('#monthly_amount_row').show();
     });
     
     // 啟用帳號按鈕
@@ -100,6 +102,13 @@ jQuery(document).ready(function($) {
     $('#utopc-reset-monthly').on('click', function() {
         if (confirm(utopc_ajax.strings.confirm_reset)) {
             resetMonthlyAmounts();
+        }
+    });
+    
+    // 計算當月使用量按鈕
+    $('#utopc-calculate-monthly').on('click', function() {
+        if (confirm('確定要計算當月金流使用量嗎？此操作將更新所有帳號的當月累計金額。')) {
+            calculateMonthlyUsage();
         }
     });
     
@@ -205,6 +214,11 @@ jQuery(document).ready(function($) {
         $('#hash_key').val(account.hash_key);
         $('#hash_iv').val(account.hash_iv);
         $('#amount_limit').val(account.amount_limit);
+        $('#monthly_amount').val(account.monthly_amount);
+        $('#company_name').val(account.company_name || '');
+        $('#tax_id').val(account.tax_id || '');
+        $('#address').val(account.address || '');
+        $('#phone').val(account.phone || '');
         $('#is_active').prop('checked', account.is_active == 1);
     }
     
@@ -363,6 +377,53 @@ jQuery(document).ready(function($) {
     }
     
     /**
+     * 計算當月金流使用量
+     */
+    function calculateMonthlyUsage() {
+        showLoading();
+        
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_calculate_monthly',
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                hideLoading();
+                
+                if (response.success) {
+                    var data = response.data;
+                    var message = data.message;
+                    
+                    // 顯示日誌資訊
+                    if (data.log_info && data.log_info.length > 0) {
+                        message += '\n\n' + data.log_info.join('\n');
+                    }
+                    
+                    // 顯示詳細結果
+                    if (data.details && data.details.length > 0) {
+                        message += '\n\n詳細結果：\n' + data.details.join('\n');
+                    }
+                    
+                    showSuccess(message);
+                    
+                    // 重新載入頁面以顯示更新後的資料
+                    setTimeout(function() {
+                        location.reload();
+                    }, 3000);
+                } else {
+                    showError(response.data);
+                }
+            },
+            error: function() {
+                hideLoading();
+                showError('計算當月使用量時發生錯誤');
+            }
+        });
+    }
+    
+    /**
      * 載入日誌
      */
     function loadLogs() {
@@ -455,6 +516,11 @@ jQuery(document).ready(function($) {
     function resetForm() {
         $('#utopc-account-form')[0].reset();
         $('#account_id').val('');
+        $('#monthly_amount').val('');
+        $('#company_name').val('');
+        $('#tax_id').val('');
+        $('#address').val('');
+        $('#phone').val('');
         currentAccountId = null;
         isEditMode = false;
     }
