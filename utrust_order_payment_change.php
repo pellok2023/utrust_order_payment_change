@@ -94,6 +94,7 @@ class UTrust_Order_Payment_Change {
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-admin.php';
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-order-monitor.php';
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-payment-switcher.php';
+        require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-payment-validator.php';
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-monthly-reset.php';
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-hpos-helper.php';
         
@@ -117,6 +118,9 @@ class UTrust_Order_Payment_Change {
         
         // 初始化金流切換模組
         UTOPC_Payment_Switcher::get_instance();
+        
+        // 初始化付款驗證模組
+        UTOPC_Payment_Validator::get_instance();
         
         // 初始化月度重置模組
         UTOPC_Monthly_Reset::get_instance();

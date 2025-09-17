@@ -62,6 +62,42 @@ $reset_stats = $monthly_reset->get_reset_stats();
         </div>
     </div>
     
+    <!-- 付款驗證設定 -->
+    <div class="utopc-payment-settings">
+        <h2><?php _e('付款驗證設定', 'utrust-order-payment-change'); ?></h2>
+        <div class="utopc-settings-grid">
+            <div class="utopc-setting-item">
+                <label>
+                    <input type="checkbox" id="utopc-auto-switch-enabled" <?php checked(get_option('utopc_auto_switch_enabled', 'yes'), 'yes'); ?>>
+                    <?php _e('啟用自動切換金流', 'utrust-order-payment-change'); ?>
+                </label>
+                <p class="description"><?php _e('當付款金額會超過當前金流上限時，自動切換到可用的金流帳號', 'utrust-order-payment-change'); ?></p>
+            </div>
+            
+            <div class="utopc-setting-item">
+                <label>
+                    <input type="checkbox" id="utopc-enable-notifications" <?php checked(get_option('utopc_enable_notifications', 'yes'), 'yes'); ?>>
+                    <?php _e('啟用通知功能', 'utrust-order-payment-change'); ?>
+                </label>
+                <p class="description"><?php _e('當金流帳號自動切換時，發送郵件通知管理員', 'utrust-order-payment-change'); ?></p>
+            </div>
+            
+            <div class="utopc-setting-item">
+                <label>
+                    <input type="checkbox" id="utopc-enable-logging" <?php checked(get_option('utopc_enable_logging', 'yes'), 'yes'); ?>>
+                    <?php _e('啟用日誌記錄', 'utrust-order-payment-change'); ?>
+                </label>
+                <p class="description"><?php _e('記錄系統操作和錯誤資訊，便於問題排查', 'utrust-order-payment-change'); ?></p>
+            </div>
+        </div>
+        
+        <div class="utopc-settings-actions">
+            <button type="button" class="button button-primary" id="utopc-save-settings">
+                <?php _e('儲存設定', 'utrust-order-payment-change'); ?>
+            </button>
+        </div>
+    </div>
+    
     <!-- 操作按鈕 -->
     <div class="utopc-actions">
         <button type="button" class="button button-primary" id="utopc-add-account">
