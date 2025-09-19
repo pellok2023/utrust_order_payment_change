@@ -45,14 +45,18 @@ class UTOPC_Payment_Switcher {
             return false;
         }
         
+        // 檢查是否為預設金流帳號
+        $is_default_account = $next_account->is_default == 1;
+        $reason = $is_default_account ? '使用預設金流（所有帳號都達到上限）' : '自動切換';
+        
         // 執行切換
-        $result = $this->perform_switch($next_account);
+        $result = $this->perform_switch($next_account, $reason);
         
         if ($result) {
-            $this->log_success("成功切換到金流帳號：{$next_account->account_name}");
+            $this->log_success("成功切換到金流帳號：{$next_account->account_name}（{$reason}）");
             
             // 發送通知
-            $this->send_switch_notification($next_account);
+            $this->send_switch_notification($next_account, $reason);
             
             return true;
         } else {
@@ -64,7 +68,7 @@ class UTOPC_Payment_Switcher {
     /**
      * 執行金流帳號切換
      */
-    private function perform_switch($account) {
+    private function perform_switch($account, $reason = 'auto_switch') {
         try {
             // 1. 停用目前啟用的帳號
             $this->database->deactivate_all_accounts();
@@ -84,7 +88,7 @@ class UTOPC_Payment_Switcher {
             }
             
             // 4. 記錄切換歷史
-            $this->record_switch_history($account);
+            $this->record_switch_history($account, $reason);
             
             return true;
             
@@ -177,14 +181,15 @@ class UTOPC_Payment_Switcher {
     /**
      * 記錄切換歷史
      */
-    private function record_switch_history($account) {
+    private function record_switch_history($account, $reason = 'auto_switch') {
         $history = get_option('utopc_switch_history', array());
         
         $history_entry = array(
             'timestamp' => current_time('mysql'),
             'account_id' => $account->id,
             'account_name' => $account->account_name,
-            'reason' => 'auto_switch',
+            'reason' => $reason,
+            'is_default' => $account->is_default,
             'monthly_amount' => $account->monthly_amount,
             'amount_limit' => $account->amount_limit
         );
@@ -243,7 +248,7 @@ class UTOPC_Payment_Switcher {
     /**
      * 發送切換通知
      */
-    private function send_switch_notification($account) {
+    private function send_switch_notification($account, $reason = '自動切換') {
         // 檢查是否啟用通知
         if (get_option('utopc_enable_notifications', 'yes') !== 'yes') {
             return;
@@ -257,17 +262,21 @@ class UTOPC_Payment_Switcher {
         $message = sprintf(
             "您的金流帳號已自動切換到：%s\n\n" .
             "切換時間：%s\n" .
+            "切換原因：%s\n" .
             "帳號名稱：%s\n" .
             "MerchantID：%s\n" .
             "當月累計金額：%s\n" .
-            "金額上限：%s\n\n" .
+            "金額上限：%s\n" .
+            "是否為預設金流：%s\n\n" .
             "此為系統自動切換，如需手動調整請登入後台管理。",
             $site_name,
             current_time('Y-m-d H:i:s'),
+            $reason,
             $account->account_name,
             $this->mask_merchant_id($account->merchant_id),
             number_format($account->monthly_amount, 2),
-            number_format($account->amount_limit, 2)
+            number_format($account->amount_limit, 2),
+            $account->is_default ? '是' : '否'
         );
         
         // 發送郵件

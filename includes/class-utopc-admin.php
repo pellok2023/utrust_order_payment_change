@@ -32,6 +32,7 @@ class UTOPC_Admin {
         add_action('wp_ajax_utopc_reset_monthly', array($this, 'ajax_reset_monthly'));
         add_action('wp_ajax_utopc_calculate_monthly', array($this, 'ajax_calculate_monthly'));
         add_action('wp_ajax_utopc_confirm_deletion', array($this, 'ajax_confirm_deletion'));
+        add_action('wp_ajax_utopc_set_default', array($this, 'ajax_set_default'));
         add_action('admin_notices', array($this, 'show_default_account_notice'));
         add_shortcode('utopc_company_info', array($this, 'company_info_shortcode'));
     }
@@ -145,7 +146,8 @@ class UTOPC_Admin {
             'tax_id' => sanitize_text_field($_POST['tax_id']),
             'address' => sanitize_textarea_field($_POST['address']),
             'phone' => sanitize_text_field($_POST['phone']),
-            'is_active' => isset($_POST['is_active']) ? 1 : 0
+            'is_active' => isset($_POST['is_active']) ? 1 : 0,
+            'is_default' => isset($_POST['is_default']) ? 1 : 0
         );
         
         $result = $this->database->add_account($data);
@@ -178,7 +180,8 @@ class UTOPC_Admin {
             'company_name' => sanitize_text_field($_POST['company_name']),
             'tax_id' => sanitize_text_field($_POST['tax_id']),
             'address' => sanitize_textarea_field($_POST['address']),
-            'phone' => sanitize_text_field($_POST['phone'])
+            'phone' => sanitize_text_field($_POST['phone']),
+            'is_default' => isset($_POST['is_default']) ? 1 : 0
         );
         
         $result = $this->database->update_account($id, $data);
@@ -347,6 +350,17 @@ class UTOPC_Admin {
     }
     
     /**
+     * 取得預設金流狀態標籤
+     */
+    public function get_default_status_label($is_default) {
+        if ($is_default) {
+            return '<span class="utopc-status default">' . __('預設金流', 'utrust-order-payment-change') . '</span>';
+        } else {
+            return '<span class="utopc-status not-default">' . __('一般金流', 'utrust-order-payment-change') . '</span>';
+        }
+    }
+    
+    /**
      * AJAX 確認刪除外掛
      */
     public function ajax_confirm_deletion() {
@@ -360,6 +374,36 @@ class UTOPC_Admin {
         update_option('utopc_confirmed_deletion', true);
         
         wp_send_json_success(__('已確認刪除，現在可以安全移除外掛。', 'utrust-order-payment-change'));
+    }
+    
+    /**
+     * AJAX 設定預設金流
+     */
+    public function ajax_set_default() {
+        check_ajax_referer('utopc_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('權限不足', 'utrust-order-payment-change'));
+        }
+        
+        $id = intval($_POST['id']);
+        $account = $this->database->get_account($id);
+        
+        if (!$account) {
+            wp_send_json_error(__('帳號不存在', 'utrust-order-payment-change'));
+        }
+        
+        // 先取消所有帳號的預設狀態
+        $this->database->unset_default_accounts();
+        
+        // 設定指定帳號為預設
+        $result = $this->database->update_account($id, array('is_default' => 1));
+        
+        if (is_wp_error($result)) {
+            wp_send_json_error($result->get_error_message());
+        } else {
+            wp_send_json_success(__('預設金流設定成功！', 'utrust-order-payment-change'));
+        }
     }
     
     

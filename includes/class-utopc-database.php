@@ -62,6 +62,7 @@ class UTOPC_Database {
             address text DEFAULT NULL,
             phone varchar(50) DEFAULT NULL,
             is_active tinyint(1) NOT NULL DEFAULT 0,
+            is_default tinyint(1) NOT NULL DEFAULT 0,
             created_at datetime DEFAULT CURRENT_TIMESTAMP,
             updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id)
@@ -100,7 +101,8 @@ class UTOPC_Database {
             'company_name' => 'varchar(255) DEFAULT NULL',
             'tax_id' => 'varchar(20) DEFAULT NULL', 
             'address' => 'text DEFAULT NULL',
-            'phone' => 'varchar(50) DEFAULT NULL'
+            'phone' => 'varchar(50) DEFAULT NULL',
+            'is_default' => 'tinyint(1) NOT NULL DEFAULT 0'
         );
         
         foreach ($columns_to_add as $column_name => $column_definition) {
@@ -302,7 +304,8 @@ class UTOPC_Database {
             'tax_id' => '',
             'address' => '',
             'phone' => '',
-            'is_active' => 0
+            'is_active' => 0,
+            'is_default' => 0
         );
         
         $data = wp_parse_args($data, $defaults);
@@ -318,6 +321,11 @@ class UTOPC_Database {
             $this->deactivate_all_accounts();
         }
         
+        // 如果設為預設金流，先取消其他帳號的預設狀態
+        if ($data['is_default']) {
+            $this->unset_default_accounts();
+        }
+        
         $result = $wpdb->insert(
             $this->table_name,
             array(
@@ -331,9 +339,10 @@ class UTOPC_Database {
                 'tax_id' => sanitize_text_field($data['tax_id']),
                 'address' => sanitize_textarea_field($data['address']),
                 'phone' => sanitize_text_field($data['phone']),
-                'is_active' => intval($data['is_active'])
+                'is_active' => intval($data['is_active']),
+                'is_default' => intval($data['is_default'])
             ),
-            array('%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s', '%d')
+            array('%s', '%s', '%s', '%s', '%f', '%f', '%s', '%s', '%s', '%s', '%d', '%d')
         );
         
         if ($result === false) {
@@ -367,6 +376,11 @@ class UTOPC_Database {
         // 如果設為啟用，先停用其他帳號
         if (isset($data['is_active']) && $data['is_active']) {
             $this->deactivate_all_accounts();
+        }
+        
+        // 如果設為預設金流，先取消其他帳號的預設狀態
+        if (isset($data['is_default']) && $data['is_default']) {
+            $this->unset_default_accounts();
         }
         
         $update_data = array();
@@ -424,6 +438,11 @@ class UTOPC_Database {
         
         if (isset($data['is_active'])) {
             $update_data['is_active'] = intval($data['is_active']);
+            $update_format[] = '%d';
+        }
+        
+        if (isset($data['is_default'])) {
+            $update_data['is_default'] = intval($data['is_default']);
             $update_format[] = '%d';
         }
         
@@ -521,6 +540,17 @@ class UTOPC_Database {
     }
     
     /**
+     * 取得預設金流帳號
+     */
+    public function get_default_account() {
+        global $wpdb;
+        
+        return $wpdb->get_row(
+            "SELECT * FROM {$this->table_name} WHERE is_default = 1 LIMIT 1"
+        );
+    }
+    
+    /**
      * 取得目前啟用帳戶的公司資訊
      */
     public function get_active_account_company_info() {
@@ -549,16 +579,43 @@ class UTOPC_Database {
     
     /**
      * 取得下一個可用的金流帳號
+     * 當所有金流都達到上限時，選擇預設金流
      */
     public function get_next_available_account() {
         global $wpdb;
         
-        return $wpdb->get_row(
+        // 首先嘗試找到未達到上限的帳號
+        $available_account = $wpdb->get_row(
             "SELECT * FROM {$this->table_name} 
              WHERE monthly_amount < amount_limit 
              ORDER BY monthly_amount ASC 
              LIMIT 1"
         );
+        
+        // 如果找到可用的帳號，直接返回
+        if ($available_account) {
+            return $available_account;
+        }
+        
+        // 如果所有帳號都達到上限，返回預設金流帳號
+        $default_account = $this->get_default_account();
+        if ($default_account) {
+            error_log('UTOPC: 所有金流帳號都達到上限，使用預設金流帳號：' . $default_account->account_name);
+            return $default_account;
+        }
+        
+        // 如果沒有預設金流帳號，返回第一個帳號作為最後選擇
+        $fallback_account = $wpdb->get_row(
+            "SELECT * FROM {$this->table_name} 
+             ORDER BY created_at ASC 
+             LIMIT 1"
+        );
+        
+        if ($fallback_account) {
+            error_log('UTOPC: 沒有預設金流帳號，使用第一個帳號作為備選：' . $fallback_account->account_name);
+        }
+        
+        return $fallback_account;
     }
     
     /**
@@ -571,6 +628,21 @@ class UTOPC_Database {
             $this->table_name,
             array('is_active' => 0),
             array('is_active' => 1),
+            array('%d'),
+            array('%d')
+        );
+    }
+    
+    /**
+     * 取消所有帳號的預設狀態
+     */
+    public function unset_default_accounts() {
+        global $wpdb;
+        
+        return $wpdb->update(
+            $this->table_name,
+            array('is_default' => 0),
+            array('is_default' => 1),
             array('%d'),
             array('%d')
         );

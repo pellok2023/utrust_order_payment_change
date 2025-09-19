@@ -103,6 +103,7 @@ $reset_stats = $monthly_reset->get_reset_stats();
                         <th><?php _e('金額上限', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('當月累計', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('狀態', 'utrust-order-payment-change'); ?></th>
+                        <th><?php _e('預設金流', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('建立時間', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('操作', 'utrust-order-payment-change'); ?></th>
                     </tr>
@@ -116,6 +117,7 @@ $reset_stats = $monthly_reset->get_reset_stats();
                             <td>NT$ <?php echo number_format($account->amount_limit, 2); ?></td>
                             <td>NT$ <?php echo number_format($account->monthly_amount, 2); ?></td>
                             <td><?php echo $this->get_status_label($account->is_active); ?></td>
+                            <td><?php echo $this->get_default_status_label($account->is_default); ?></td>
                             <td><?php echo esc_html($account->created_at); ?></td>
                             <td>
                                 <button type="button" class="button button-small edit-account" data-id="<?php echo $account->id; ?>">
@@ -125,6 +127,12 @@ $reset_stats = $monthly_reset->get_reset_stats();
                                 <?php if (!$account->is_active): ?>
                                     <button type="button" class="button button-small activate-account" data-id="<?php echo $account->id; ?>">
                                         <?php _e('啟用', 'utrust-order-payment-change'); ?>
+                                    </button>
+                                <?php endif; ?>
+                                
+                                <?php if (!$account->is_default): ?>
+                                    <button type="button" class="button button-small set-default-account" data-id="<?php echo $account->id; ?>">
+                                        <?php _e('設為預設', 'utrust-order-payment-change'); ?>
                                     </button>
                                 <?php endif; ?>
                                 
@@ -149,6 +157,7 @@ $reset_stats = $monthly_reset->get_reset_stats();
                         <th><?php _e('切換時間', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('帳號名稱', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('切換原因', 'utrust-order-payment-change'); ?></th>
+                        <th><?php _e('預設金流', 'utrust-order-payment-change'); ?></th>
                         <th><?php _e('當時金額', 'utrust-order-payment-change'); ?></th>
                     </tr>
                 </thead>
@@ -157,7 +166,8 @@ $reset_stats = $monthly_reset->get_reset_stats();
                         <tr>
                             <td><?php echo esc_html($record['timestamp']); ?></td>
                             <td><?php echo esc_html($record['account_name']); ?></td>
-                            <td><?php echo $record['reason'] === 'auto_switch' ? __('自動切換', 'utrust-order-payment-change') : __('手動切換', 'utrust-order-payment-change'); ?></td>
+                            <td><?php echo esc_html($record['reason']); ?></td>
+                            <td><?php echo isset($record['is_default']) && $record['is_default'] ? __('是', 'utrust-order-payment-change') : __('否', 'utrust-order-payment-change'); ?></td>
                             <td>NT$ <?php echo number_format($record['monthly_amount'], 2); ?></td>
                         </tr>
                     <?php endforeach; ?>
@@ -276,6 +286,16 @@ $reset_stats = $monthly_reset->get_reset_stats();
                 <td>
                     <input type="checkbox" id="is_active" name="is_active" value="1">
                     <p class="description"><?php _e('勾選後將啟用此帳號並停用其他帳號', 'utrust-order-payment-change'); ?></p>
+                </td>
+            </tr>
+            
+            <tr>
+                <th scope="row">
+                    <label for="is_default"><?php _e('設為預設金流', 'utrust-order-payment-change'); ?></label>
+                </th>
+                <td>
+                    <input type="checkbox" id="is_default" name="is_default" value="1">
+                    <p class="description"><?php _e('當所有金流都達到上限時，系統將使用此預設金流', 'utrust-order-payment-change'); ?></p>
                 </td>
             </tr>
         </table>
