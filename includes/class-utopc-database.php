@@ -619,6 +619,42 @@ class UTOPC_Database {
     }
     
     /**
+     * 取得可以處理指定金額的金流帳號
+     */
+    public function get_account_can_handle_amount($amount) {
+        global $wpdb;
+        
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->table_name} 
+             WHERE (monthly_amount + %f) <= amount_limit 
+             ORDER BY monthly_amount ASC 
+             LIMIT 1",
+            $amount
+        ));
+    }
+    
+    /**
+     * 檢查是否有帳號可以處理指定金額
+     */
+    public function has_account_for_amount($amount) {
+        $account = $this->get_account_can_handle_amount($amount);
+        return !empty($account);
+    }
+    
+    /**
+     * 取得所有可用的金流帳號（按使用量排序）
+     */
+    public function get_available_accounts() {
+        global $wpdb;
+        
+        return $wpdb->get_results(
+            "SELECT * FROM {$this->table_name} 
+             WHERE monthly_amount < amount_limit 
+             ORDER BY monthly_amount ASC"
+        );
+    }
+    
+    /**
      * 停用所有帳號
      */
     public function deactivate_all_accounts() {

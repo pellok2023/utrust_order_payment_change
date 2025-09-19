@@ -33,6 +33,7 @@ class UTOPC_Admin {
         add_action('wp_ajax_utopc_calculate_monthly', array($this, 'ajax_calculate_monthly'));
         add_action('wp_ajax_utopc_confirm_deletion', array($this, 'ajax_confirm_deletion'));
         add_action('wp_ajax_utopc_set_default', array($this, 'ajax_set_default'));
+        add_action('wp_ajax_utopc_save_settings', array($this, 'ajax_save_settings'));
         add_action('admin_notices', array($this, 'show_default_account_notice'));
         add_shortcode('utopc_company_info', array($this, 'company_info_shortcode'));
     }
@@ -479,6 +480,31 @@ class UTOPC_Admin {
         $html .= '</div>';
         
         return $html;
+    }
+    
+    /**
+     * AJAX 儲存設定
+     */
+    public function ajax_save_settings() {
+        check_ajax_referer('utopc_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('權限不足', 'utrust-order-payment-change'));
+        }
+        
+        // 儲存自動切換設定
+        $auto_switch_enabled = isset($_POST['auto_switch_enabled']) ? 'yes' : 'no';
+        update_option('utopc_auto_switch_enabled', $auto_switch_enabled);
+        
+        // 儲存通知設定
+        $notifications_enabled = isset($_POST['notifications_enabled']) ? 'yes' : 'no';
+        update_option('utopc_enable_notifications', $notifications_enabled);
+        
+        // 儲存日誌設定
+        $logging_enabled = isset($_POST['logging_enabled']) ? 'yes' : 'no';
+        update_option('utopc_enable_logging', $logging_enabled);
+        
+        wp_send_json_success(__('設定儲存成功！', 'utrust-order-payment-change'));
     }
     
     /**
