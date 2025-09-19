@@ -166,11 +166,6 @@ $reset_stats = $monthly_reset->get_reset_stats();
                                     </button>
                                 <?php endif; ?>
                                 
-                                <?php if (!$account->is_default): ?>
-                                    <button type="button" class="button button-small set-default-account" data-id="<?php echo $account->id; ?>">
-                                        <?php _e('設為預設', 'utrust-order-payment-change'); ?>
-                                    </button>
-                                <?php endif; ?>
                                 
                                 <button type="button" class="button button-small delete-account" data-id="<?php echo $account->id; ?>" data-is-active="<?php echo $account->is_active; ?>" data-is-last="<?php echo count($accounts) === 1 ? '1' : '0'; ?>">
                                     <?php _e('刪除', 'utrust-order-payment-change'); ?>
@@ -350,6 +345,8 @@ $reset_stats = $monthly_reset->get_reset_stats();
             <button type="button" class="button" id="utopc-clear-logs"><?php _e('清除日誌', 'utrust-order-payment-change'); ?></button>
             <button type="button" class="button" id="utopc-refresh-logs"><?php _e('重新整理', 'utrust-order-payment-change'); ?></button>
         </div>
+        
+        <p class="description"><?php _e('記錄系統操作和錯誤資訊，便於問題排查', 'utrust-order-payment-change'); ?></p>
         
         <div class="utopc-logs-list">
             <!-- 日誌內容將透過 AJAX 載入 -->

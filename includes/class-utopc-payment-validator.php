@@ -169,19 +169,25 @@ class UTOPC_Payment_Validator {
                 if ($switch_result) {
                     $this->log_success("已成功切換金流帳號，購物車可以繼續結帳");
                     
-                    // 顯示通知給用戶
-                    wc_add_notice(
-                        __('系統已自動切換金流服務商以處理您的訂單，請繼續付款流程。', 'utrust-order-payment-change'),
-                        'notice'
-                    );
                 } else {
-                    $this->log_error("無法找到可用的金流帳號，購物車結帳可能失敗");
+                    $this->log_warning("無法找到可用的金流帳號，嘗試使用預設金流帳號");
                     
-                    // 顯示錯誤通知
-                    wc_add_notice(
-                        __('目前沒有可用的金流服務商處理您的訂單，請稍後再試或聯繫客服。', 'utrust-order-payment-change'),
-                        'error'
-                    );
+                    // 嘗試使用預設金流帳號
+                    $default_account = $this->database->get_default_account();
+                    if ($default_account) {
+                        $this->log_info("使用預設金流帳號：{$default_account->account_name} 處理購物車訂單");
+                        
+                        // 切換到預設金流帳號
+                        $switch_result = $this->payment_switcher->manual_switch_to_account($default_account->id);
+                        
+                        if ($switch_result) {
+                            $this->log_success("已切換到預設金流帳號，購物車可以繼續結帳");
+                        } else {
+                            $this->log_error("無法切換到預設金流帳號，購物車結帳可能失敗");
+                        }
+                    } else {
+                        $this->log_error("沒有可用的預設金流帳號，購物車結帳可能失敗");
+                    }
                 }
             }
         }
@@ -209,8 +215,32 @@ class UTOPC_Payment_Validator {
                 // 重新生成付款表單
                 $this->regenerate_newebpay_form($order, $gateway);
             } else {
-                $this->log_error("無法找到可用的金流帳號，NewebPay 訂單 {$order->get_id()} 付款可能失敗");
-                throw new Exception('沒有可用的金流帳號，請稍後再試或聯繫客服');
+                $this->log_warning("無法找到可用的金流帳號，嘗試使用預設金流帳號");
+                
+                // 嘗試使用預設金流帳號
+                $default_account = $this->database->get_default_account();
+                if ($default_account) {
+                    $this->log_info("使用預設金流帳號：{$default_account->account_name} 處理 NewebPay 訂單 {$order->get_id()}");
+                    
+                    // 切換到預設金流帳號
+                    $switch_result = $this->payment_switcher->manual_switch_to_account($default_account->id);
+                    
+                    if ($switch_result) {
+                        $this->log_success("已切換到預設金流帳號，NewebPay 訂單 {$order->get_id()} 可以繼續付款");
+                        
+                        // 重新獲取新的金流設定並重新生成表單
+                        $this->update_newebpay_settings_for_order($order);
+                        
+                        // 重新生成付款表單
+                        $this->regenerate_newebpay_form($order, $gateway);
+                    } else {
+                        $this->log_error("無法切換到預設金流帳號，NewebPay 訂單 {$order->get_id()} 付款可能失敗");
+                        throw new Exception('沒有可用的金流帳號，請稍後再試或聯繫客服');
+                    }
+                } else {
+                    $this->log_error("沒有可用的預設金流帳號，NewebPay 訂單 {$order->get_id()} 付款可能失敗");
+                    throw new Exception('沒有可用的金流帳號，請稍後再試或聯繫客服');
+                }
             }
         }
     }
@@ -273,12 +303,37 @@ class UTOPC_Payment_Validator {
                 // 重新處理付款
                 return $gateway->process_payment($order_id);
             } else {
-                $this->log_error("無法切換金流，付款失敗");
+                $this->log_warning("無法切換金流，嘗試使用預設金流帳號");
                 
-                return array(
-                    'result' => 'failure',
-                    'messages' => '沒有可用的金流帳號，請稍後再試或聯繫客服'
-                );
+                // 嘗試使用預設金流帳號
+                $default_account = $this->database->get_default_account();
+                if ($default_account) {
+                    $this->log_info("使用預設金流帳號：{$default_account->account_name} 處理付款");
+                    
+                    // 切換到預設金流帳號
+                    $switch_result = $this->payment_switcher->manual_switch_to_account($default_account->id);
+                    
+                    if ($switch_result) {
+                        $this->log_success("已切換到預設金流帳號，重新處理付款");
+                        
+                        // 重新處理付款
+                        return $gateway->process_payment($order_id);
+                    } else {
+                        $this->log_error("無法切換到預設金流帳號，付款失敗");
+                        
+                        return array(
+                            'result' => 'failure',
+                            'messages' => '沒有可用的金流帳號，請稍後再試或聯繫客服'
+                        );
+                    }
+                } else {
+                    $this->log_error("沒有可用的預設金流帳號，付款失敗");
+                    
+                    return array(
+                        'result' => 'failure',
+                        'messages' => '沒有可用的金流帳號，請稍後再試或聯繫客服'
+                    );
+                }
             }
         }
         
@@ -326,18 +381,20 @@ class UTOPC_Payment_Validator {
             return false;
         }
         
-        // 檢查是否有帳號可以處理此金額
-        if (!$this->has_account_for_amount($order_amount)) {
-            $this->log_error("沒有金流帳號可以處理金額 {$order_amount} 的訂單");
-            return false;
-        }
-        
-        // 取得可以處理此金額的金流帳號
+        // 首先嘗試找到可以處理此金額的帳號
         $target_account = $this->database->get_account_can_handle_amount($order_amount);
         
+        // 如果沒有帳號可以處理此金額，使用預設金流帳號
         if (!$target_account) {
-            $this->log_error('無法找到可以處理此金額的金流帳號');
-            return false;
+            $this->log_warning("沒有金流帳號可以處理金額 {$order_amount} 的訂單，嘗試使用預設金流帳號");
+            $target_account = $this->database->get_default_account();
+            
+            if (!$target_account) {
+                $this->log_error('沒有可用的預設金流帳號');
+                return false;
+            }
+            
+            $this->log_info("使用預設金流帳號：{$target_account->account_name} 處理訂單");
         }
         
         // 如果目標帳號就是當前啟用的帳號，不需要切換
@@ -470,9 +527,31 @@ class UTOPC_Payment_Validator {
                             'message' => __('已自動切換金流服務商，請重新載入頁面', 'utrust-order-payment-change')
                         ));
                     } else {
-                        wp_send_json_error(array(
-                            'message' => __('沒有可用的金流服務商', 'utrust-order-payment-change')
-                        ));
+                        // 嘗試使用預設金流帳號
+                        $default_account = $this->database->get_default_account();
+                        if ($default_account) {
+                            $this->log_info("AJAX 檢查：使用預設金流帳號：{$default_account->account_name}");
+                            
+                            // 切換到預設金流帳號
+                            $switch_result = $this->payment_switcher->manual_switch_to_account($default_account->id);
+                            
+                            if ($switch_result) {
+                                $this->log_success("AJAX 切換到預設金流成功：訂單 {$order_id}");
+                                
+                                wp_send_json_success(array(
+                                    'switched' => true,
+                                    'message' => __('已自動切換到預設金流服務商，請重新載入頁面', 'utrust-order-payment-change')
+                                ));
+                            } else {
+                                wp_send_json_error(array(
+                                    'message' => __('沒有可用的金流服務商', 'utrust-order-payment-change')
+                                ));
+                            }
+                        } else {
+                            wp_send_json_error(array(
+                                'message' => __('沒有可用的金流服務商', 'utrust-order-payment-change')
+                            ));
+                        }
                     }
                 } else {
                     wp_send_json_success(array(

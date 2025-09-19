@@ -85,6 +85,18 @@
     border: 1px solid #ebccd1;
 }
 
+.utopc-status.default {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+.utopc-status.not-default {
+    background: #f8f9fa;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+
 /* 無帳號提示 */
 .utopc-no-accounts {
     text-align: center;
@@ -158,6 +170,36 @@
 }
 
 .log-warning {
+    background: #fcf8e3;
+    color: #8a6d3b;
+}
+
+/* 日誌等級樣式 - 更新版本 */
+.utopc-log-level {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.utopc-log-level.success {
+    background: #dff0d8;
+    color: #3c763d;
+}
+
+.utopc-log-level.error {
+    background: #f2dede;
+    color: #a94442;
+}
+
+.utopc-log-level.info {
+    background: #d9edf7;
+    color: #31708f;
+}
+
+.utopc-log-level.warning {
     background: #fcf8e3;
     color: #8a6d3b;
 }

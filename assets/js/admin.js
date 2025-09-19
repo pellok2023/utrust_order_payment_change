@@ -427,6 +427,7 @@ jQuery(document).ready(function($) {
      * 載入日誌
      */
     function loadLogs() {
+        console.log('loadLogs called'); // 除錯用
         showLoading();
         
         $.ajax({
@@ -437,6 +438,7 @@ jQuery(document).ready(function($) {
                 nonce: utopc_ajax.nonce
             },
             success: function(response) {
+                console.log('AJAX success response:', response); // 除錯用
                 hideLoading();
                 
                 if (response.success) {
@@ -445,9 +447,10 @@ jQuery(document).ready(function($) {
                     showError('載入日誌失敗：' + response.data);
                 }
             },
-            error: function() {
+            error: function(xhr, status, error) {
+                console.log('AJAX error:', xhr, status, error); // 除錯用
                 hideLoading();
-                showError('載入日誌時發生錯誤');
+                showError('載入日誌時發生錯誤：' + error);
             }
         });
     }
@@ -455,29 +458,39 @@ jQuery(document).ready(function($) {
     /**
      * 顯示日誌
      */
-    function displayLogs(logs) {
-        var logsHtml = '';
+    function displayLogs(data) {
+        console.log('displayLogs called with data:', data); // 除錯用
         
-        if (logs.length === 0) {
-            logsHtml = '<p>沒有日誌記錄</p>';
+        if (data && data.html) {
+            // 如果有 HTML 內容，直接使用
+            $('.utopc-logs-list').html(data.html);
+        } else if (data && data.logs && Array.isArray(data.logs)) {
+            // 如果有原始日誌資料，自己生成 HTML
+            var logsHtml = '';
+            
+            if (data.logs.length === 0) {
+                logsHtml = '<p>沒有日誌記錄</p>';
+            } else {
+                logsHtml = '<table class="wp-list-table widefat fixed striped">';
+                logsHtml += '<thead><tr><th>時間</th><th>等級</th><th>模組</th><th>訊息</th></tr></thead><tbody>';
+                
+                data.logs.forEach(function(log) {
+                    var levelClass = 'utopc-log-level ' + log.level.toLowerCase();
+                    logsHtml += '<tr>';
+                    logsHtml += '<td>' + log.timestamp + '</td>';
+                    logsHtml += '<td><span class="' + levelClass + '">' + log.level + '</span></td>';
+                    logsHtml += '<td>' + (log.module || '-') + '</td>';
+                    logsHtml += '<td>' + log.message + '</td>';
+                    logsHtml += '</tr>';
+                });
+                
+                logsHtml += '</tbody></table>';
+            }
+            
+            $('.utopc-logs-list').html(logsHtml);
         } else {
-            logsHtml = '<table class="wp-list-table widefat fixed striped">';
-            logsHtml += '<thead><tr><th>時間</th><th>等級</th><th>模組</th><th>訊息</th></tr></thead><tbody>';
-            
-            logs.forEach(function(log) {
-                var levelClass = 'log-' + log.level.toLowerCase();
-                logsHtml += '<tr class="' + levelClass + '">';
-                logsHtml += '<td>' + log.timestamp + '</td>';
-                logsHtml += '<td><span class="log-level ' + levelClass + '">' + log.level + '</span></td>';
-                logsHtml += '<td>' + (log.module || '-') + '</td>';
-                logsHtml += '<td>' + log.message + '</td>';
-                logsHtml += '</tr>';
-            });
-            
-            logsHtml += '</tbody></table>';
+            $('.utopc-logs-list').html('<p>沒有日誌記錄</p>');
         }
-        
-        $('.utopc-logs-list').html(logsHtml);
     }
     
     /**

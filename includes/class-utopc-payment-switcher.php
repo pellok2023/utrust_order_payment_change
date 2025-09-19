@@ -25,6 +25,7 @@ class UTOPC_Payment_Switcher {
         
         // 註冊 AJAX 處理
         add_action('wp_ajax_utopc_manual_switch', array($this, 'ajax_manual_switch'));
+        
     }
     
     /**
@@ -376,4 +377,5 @@ class UTOPC_Payment_Switcher {
     private function log_warning($message) {
         $this->log_message('WARNING', $message);
     }
+    
 }

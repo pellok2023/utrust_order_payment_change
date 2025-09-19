@@ -34,6 +34,8 @@ class UTOPC_Admin {
         add_action('wp_ajax_utopc_confirm_deletion', array($this, 'ajax_confirm_deletion'));
         add_action('wp_ajax_utopc_set_default', array($this, 'ajax_set_default'));
         add_action('wp_ajax_utopc_save_settings', array($this, 'ajax_save_settings'));
+        add_action('wp_ajax_utopc_get_logs', array($this, 'ajax_get_logs'));
+        add_action('wp_ajax_utopc_clear_logs', array($this, 'ajax_clear_logs'));
         add_action('admin_notices', array($this, 'show_default_account_notice'));
         add_shortcode('utopc_company_info', array($this, 'company_info_shortcode'));
     }
@@ -154,8 +156,10 @@ class UTOPC_Admin {
         $result = $this->database->add_account($data);
         
         if (is_wp_error($result)) {
+            $this->log_error("新增金流帳號失敗：{$data['account_name']} - {$result->get_error_message()}", 'admin');
             wp_send_json_error($result->get_error_message());
         } else {
+            $this->log_success("成功新增金流帳號：{$data['account_name']} (ID: $result)", 'admin');
             wp_send_json_success(__('金流帳號新增成功！', 'utrust-order-payment-change'));
         }
     }
@@ -185,11 +189,16 @@ class UTOPC_Admin {
             'is_default' => isset($_POST['is_default']) ? 1 : 0
         );
         
+        $account = $this->database->get_account($id);
+        $account_name = $account ? $account->account_name : '未知帳號';
+        
         $result = $this->database->update_account($id, $data);
         
         if (is_wp_error($result)) {
+            $this->log_error("更新金流帳號失敗：{$account_name} - {$result->get_error_message()}", 'admin');
             wp_send_json_error($result->get_error_message());
         } else {
+            $this->log_success("成功更新金流帳號：{$account_name} (ID: $id)", 'admin');
             wp_send_json_success(__('金流帳號更新成功！', 'utrust-order-payment-change'));
         }
     }
@@ -205,11 +214,18 @@ class UTOPC_Admin {
         }
         
         $id = intval($_POST['id']);
+        $account = $this->database->get_account($id);
+        $account_name = $account ? $account->account_name : '未知帳號';
+        
+        $this->log_info("開始刪除金流帳號：{$account_name} (ID: $id)", 'admin');
+        
         $result = $this->database->delete_account($id);
         
         if (is_wp_error($result)) {
+            $this->log_error("刪除金流帳號失敗：{$account_name} - {$result->get_error_message()}", 'admin');
             wp_send_json_error($result->get_error_message());
         } else {
+            $this->log_success("成功刪除金流帳號：{$account_name} (ID: $id)", 'admin');
             wp_send_json_success(__('金流帳號刪除成功！', 'utrust-order-payment-change'));
         }
     }
@@ -225,11 +241,22 @@ class UTOPC_Admin {
         }
         
         $id = intval($_POST['id']);
+        $account = $this->database->get_account($id);
+        
+        if (!$account) {
+            $this->log_error("嘗試啟用不存在的金流帳號，ID: $id", 'admin');
+            wp_send_json_error(__('帳號不存在', 'utrust-order-payment-change'));
+        }
+        
+        $this->log_info("開始啟用金流帳號：{$account->account_name} (ID: $id)", 'admin');
+        
         $result = $this->database->activate_account($id);
         
         if (is_wp_error($result)) {
+            $this->log_error("啟用金流帳號失敗：{$account->account_name} - {$result->get_error_message()}", 'admin');
             wp_send_json_error($result->get_error_message());
         } else {
+            $this->log_success("成功啟用金流帳號：{$account->account_name} (ID: $id)", 'admin');
             wp_send_json_success(__('金流帳號啟用成功！', 'utrust-order-payment-change'));
         }
     }
@@ -391,18 +418,24 @@ class UTOPC_Admin {
         $account = $this->database->get_account($id);
         
         if (!$account) {
+            $this->log_error("嘗試設定不存在的金流帳號為預設，ID: $id", 'admin');
             wp_send_json_error(__('帳號不存在', 'utrust-order-payment-change'));
         }
         
+        $this->log_info("開始設定預設金流：{$account->account_name} (ID: $id)", 'admin');
+        
         // 先取消所有帳號的預設狀態
         $this->database->unset_default_accounts();
+        $this->log_info("已取消所有帳號的預設狀態", 'admin');
         
         // 設定指定帳號為預設
         $result = $this->database->update_account($id, array('is_default' => 1));
         
         if (is_wp_error($result)) {
+            $this->log_error("設定預設金流失敗：{$account->account_name} - {$result->get_error_message()}", 'admin');
             wp_send_json_error($result->get_error_message());
         } else {
+            $this->log_success("成功設定預設金流：{$account->account_name} (ID: $id)", 'admin');
             wp_send_json_success(__('預設金流設定成功！', 'utrust-order-payment-change'));
         }
     }
@@ -541,5 +574,120 @@ class UTOPC_Admin {
             delete_option('utopc_default_account_created_time');
             delete_option('utopc_default_account_source');
         }
+    }
+    
+    /**
+     * AJAX 取得日誌
+     */
+    public function ajax_get_logs() {
+        check_ajax_referer('utopc_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('權限不足', 'utrust-order-payment-change'));
+        }
+        
+        $logs = get_option('utopc_logs', array());
+        
+        // 按時間倒序排列（最新的在前）
+        $logs = array_reverse($logs);
+        
+        // 限制顯示數量
+        $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 50;
+        $logs = array_slice($logs, 0, $limit);
+        
+        $html = '';
+        
+        if (empty($logs)) {
+            $html = '<p>' . __('目前沒有日誌記錄', 'utrust-order-payment-change') . '</p>';
+        } else {
+            $html .= '<div class="utopc-logs-list">';
+            $html .= '<table class="wp-list-table widefat fixed striped">';
+            $html .= '<thead>';
+            $html .= '<tr>';
+            $html .= '<th>' . __('時間', 'utrust-order-payment-change') . '</th>';
+            $html .= '<th>' . __('等級', 'utrust-order-payment-change') . '</th>';
+            $html .= '<th>' . __('模組', 'utrust-order-payment-change') . '</th>';
+            $html .= '<th>' . __('訊息', 'utrust-order-payment-change') . '</th>';
+            $html .= '</tr>';
+            $html .= '</thead>';
+            $html .= '<tbody>';
+            
+            foreach ($logs as $log) {
+                $level_class = strtolower($log['level']);
+                $html .= '<tr>';
+                $html .= '<td>' . esc_html($log['timestamp']) . '</td>';
+                $html .= '<td><span class="utopc-log-level ' . $level_class . '">' . esc_html($log['level']) . '</span></td>';
+                $html .= '<td>' . esc_html($log['module']) . '</td>';
+                $html .= '<td>' . esc_html($log['message']) . '</td>';
+                $html .= '</tr>';
+            }
+            
+            $html .= '</tbody>';
+            $html .= '</table>';
+            $html .= '</div>';
+        }
+        
+        wp_send_json_success(array(
+            'html' => $html, 
+            'count' => count($logs),
+            'logs' => $logs  // 新增原始日誌資料
+        ));
+    }
+    
+    /**
+     * AJAX 清除日誌
+     */
+    public function ajax_clear_logs() {
+        check_ajax_referer('utopc_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('權限不足', 'utrust-order-payment-change'));
+        }
+        
+        delete_option('utopc_logs');
+        
+        wp_send_json_success(__('日誌已清除', 'utrust-order-payment-change'));
+    }
+    
+    /**
+     * 記錄日誌
+     */
+    private function log_message($level, $message, $module = 'admin') {
+        if (!get_option('utopc_enable_logging', 'yes')) {
+            return;
+        }
+        
+        $log_entry = array(
+            'timestamp' => current_time('mysql'),
+            'level' => $level,
+            'message' => $message,
+            'module' => $module
+        );
+        
+        $logs = get_option('utopc_logs', array());
+        $logs[] = $log_entry;
+        
+        // 限制日誌數量，保留最近 1000 筆
+        if (count($logs) > 1000) {
+            $logs = array_slice($logs, -1000);
+        }
+        
+        update_option('utopc_logs', $logs);
+    }
+    
+    private function log_success($message, $module = 'admin') {
+        $this->log_message('SUCCESS', $message, $module);
+    }
+    
+    private function log_error($message, $module = 'admin') {
+        $this->log_message('ERROR', $message, $module);
+    }
+    
+    private function log_info($message, $module = 'admin') {
+        $this->log_message('INFO', $message, $module);
+    }
+    
+    private function log_warning($message, $module = 'admin') {
+        $this->log_message('WARNING', $message, $module);
     }
 }

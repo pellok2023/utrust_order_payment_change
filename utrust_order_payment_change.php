@@ -3,7 +3,7 @@
  * Plugin Name: UTrust Order Payment Change
  * Plugin URI: https://utrust.com
  * Description: 自動管理多個金流帳號，根據金額上限自動切換金流服務商
- * Version: 1.2.0
+ * Version: 1.2.1
  * Author: UTrust
  * Author URI: https://utrust.com
  * Text Domain: utrust-order-payment-change
@@ -28,7 +28,7 @@ if (!defined('ABSPATH')) {
 // 定義外掛常數
 define('UTOPC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('UTOPC_PLUGIN_PATH', plugin_dir_path(__FILE__));
-define('UTOPC_PLUGIN_VERSION', '1.2.0');
+define('UTOPC_PLUGIN_VERSION', '1.2.1');
 define('UTOPC_PLUGIN_BASENAME', plugin_basename(__FILE__));
 
 // 檢查 WooCommerce 是否啟用
