@@ -36,6 +36,7 @@ class UTOPC_Admin {
         add_action('wp_ajax_utopc_save_settings', array($this, 'ajax_save_settings'));
         add_action('wp_ajax_utopc_get_logs', array($this, 'ajax_get_logs'));
         add_action('wp_ajax_utopc_clear_logs', array($this, 'ajax_clear_logs'));
+        add_action('wp_ajax_utopc_update_old_orders', array($this, 'ajax_update_old_orders'));
         add_action('admin_notices', array($this, 'show_default_account_notice'));
         add_shortcode('utopc_company_info', array($this, 'company_info_shortcode'));
     }
@@ -689,5 +690,113 @@ class UTOPC_Admin {
     
     private function log_warning($message, $module = 'admin') {
         $this->log_message('WARNING', $message, $module);
+    }
+    
+    /**
+     * AJAX 更新舊訂單的金流公司資訊
+     */
+    public function ajax_update_old_orders() {
+        check_ajax_referer('utopc_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('權限不足', 'utrust-order-payment-change'));
+        }
+        
+        $batch_size = isset($_POST['batch_size']) ? intval($_POST['batch_size']) : 50;
+        $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+        
+        try {
+            $result = $this->update_old_orders_batch($batch_size, $offset);
+            
+            wp_send_json_success(array(
+                'message' => sprintf(__('已處理 %d 筆訂單，更新了 %d 筆', 'utrust-order-payment-change'), 
+                    $result['processed'], $result['updated']),
+                'processed' => $result['processed'],
+                'updated' => $result['updated'],
+                'has_more' => $result['has_more'],
+                'next_offset' => $result['next_offset']
+            ));
+            
+        } catch (Exception $e) {
+            wp_send_json_error(__('更新失敗：', 'utrust-order-payment-change') . $e->getMessage());
+        }
+    }
+    
+    /**
+     * 批量更新舊訂單
+     */
+    private function update_old_orders_batch($batch_size = 50, $offset = 0) {
+        global $wpdb;
+        
+        // 取得目前啟用的金流帳戶
+        $active_account = $this->database->get_active_account();
+        if (!$active_account) {
+            throw new Exception(__('沒有啟用的金流帳戶', 'utrust-order-payment-change'));
+        }
+        
+        // 查詢沒有金流公司資訊的 NewebPay 訂單
+        $query = $wpdb->prepare("
+            SELECT p.ID 
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm_method ON p.ID = pm_method.post_id
+            LEFT JOIN {$wpdb->postmeta} pm_company ON p.ID = pm_company.post_id AND pm_company.meta_key = '_utopc_payment_company_name'
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status IN ('wc-processing', 'wc-completed', 'wc-on-hold')
+            AND pm_method.meta_key = '_payment_method'
+            AND pm_method.meta_value LIKE 'ry_newebpay%'
+            AND (pm_company.meta_value IS NULL OR pm_company.meta_value = '')
+            ORDER BY p.ID ASC
+            LIMIT %d OFFSET %d
+        ", $batch_size, $offset);
+        
+        $order_ids = $wpdb->get_col($query);
+        
+        $updated_count = 0;
+        
+        foreach ($order_ids as $order_id) {
+            $order = wc_get_order($order_id);
+            if (!$order) {
+                continue;
+            }
+            
+            // 更新訂單的金流公司資訊
+            $order->update_meta_data('_utopc_payment_account_id', $active_account->id);
+            $order->update_meta_data('_utopc_payment_account_name', $active_account->account_name);
+            $order->update_meta_data('_utopc_payment_merchant_id', $active_account->merchant_id);
+            
+            if (!empty($active_account->company_name)) {
+                $order->update_meta_data('_utopc_payment_company_name', $active_account->company_name);
+            }
+            
+            $order->save();
+            $updated_count++;
+        }
+        
+        // 檢查是否還有更多訂單需要處理
+        $total_query = $wpdb->prepare("
+            SELECT COUNT(p.ID) 
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->postmeta} pm_method ON p.ID = pm_method.post_id
+            LEFT JOIN {$wpdb->postmeta} pm_company ON p.ID = pm_company.post_id AND pm_company.meta_key = '_utopc_payment_company_name'
+            WHERE p.post_type = 'shop_order'
+            AND p.post_status IN ('wc-processing', 'wc-completed', 'wc-on-hold')
+            AND pm_method.meta_key = '_payment_method'
+            AND pm_method.meta_value LIKE 'ry_newebpay%'
+            AND (pm_company.meta_value IS NULL OR pm_company.meta_value = '')
+        ");
+        
+        $total_remaining = $wpdb->get_var($total_query);
+        $has_more = $total_remaining > 0;
+        $next_offset = $offset + count($order_ids);
+        
+        // 記錄日誌
+        $this->log_success("批量更新舊訂單：處理了 " . count($order_ids) . " 筆，更新了 {$updated_count} 筆");
+        
+        return array(
+            'processed' => count($order_ids),
+            'updated' => $updated_count,
+            'has_more' => $has_more,
+            'next_offset' => $next_offset
+        );
     }
 }

@@ -75,6 +75,9 @@ class UTOPC_Order_Monitor {
             return;
         }
         
+        // 記錄訂單使用的金流帳戶資訊
+        $this->record_payment_account_info($order, $active_account);
+        
         // 標記訂單已處理
         $this->mark_order_processed($order_id);
         
@@ -148,6 +151,28 @@ class UTOPC_Order_Monitor {
         
         // 記錄成功日誌
         $this->log_success("退款訂單 {$order_id}，金額 {$refund_amount} 已從金流帳號 {$active_account->account_name} 扣除");
+    }
+    
+    /**
+     * 記錄訂單使用的金流帳戶資訊
+     */
+    private function record_payment_account_info($order, $account) {
+        // 記錄金流帳戶 ID
+        $order->update_meta_data('_utopc_payment_account_id', $account->id);
+        
+        // 記錄金流帳戶名稱
+        $order->update_meta_data('_utopc_payment_account_name', $account->account_name);
+        
+        // 記錄金流公司名稱
+        if (!empty($account->company_name)) {
+            $order->update_meta_data('_utopc_payment_company_name', $account->company_name);
+        }
+        
+        // 記錄商戶 ID
+        $order->update_meta_data('_utopc_payment_merchant_id', $account->merchant_id);
+        
+        // 儲存訂單
+        $order->save();
     }
     
     /**

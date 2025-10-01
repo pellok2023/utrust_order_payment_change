@@ -116,6 +116,10 @@ $reset_stats = $monthly_reset->get_reset_stats();
             <?php _e('查看日誌', 'utrust-order-payment-change'); ?>
         </button>
         
+        <button type="button" class="button button-primary" id="utopc-update-old-orders">
+            <?php _e('更新舊訂單', 'utrust-order-payment-change'); ?>
+        </button>
+        
         <button type="button" class="button button-secondary" id="utopc-delete-plugin" style="color: #d63638; border-color: #d63638;">
             <?php _e('移除外掛', 'utrust-order-payment-change'); ?>
         </button>
@@ -416,6 +420,48 @@ $reset_stats = $monthly_reset->get_reset_stats();
         </button>
         <button type="button" class="button" onclick="jQuery('#utopc-delete-plugin-dialog').dialog('close');">
             <?php _e('取消', 'utrust-order-payment-change'); ?>
+        </button>
+    </div>
+</div>
+
+<!-- 更新舊訂單對話框 -->
+<div id="utopc-update-old-orders-dialog" title="<?php _e('更新舊訂單金流資訊', 'utrust-order-payment-change'); ?>" style="display: none;">
+    <div class="utopc-update-info">
+        <p><?php _e('此功能將為舊的 NewebPay 訂單添加金流公司資訊，讓訂單列表能正確顯示金流公司欄位。', 'utrust-order-payment-change'); ?></p>
+        
+        <div class="utopc-update-settings">
+            <label for="utopc-batch-size">
+                <?php _e('每批處理數量：', 'utrust-order-payment-change'); ?>
+                <select id="utopc-batch-size">
+                    <option value="25">25</option>
+                    <option value="50" selected>50</option>
+                    <option value="100">100</option>
+                </select>
+            </label>
+        </div>
+        
+        <div class="utopc-update-progress" style="display: none;">
+            <div class="utopc-progress-bar">
+                <div class="utopc-progress-fill"></div>
+            </div>
+            <p class="utopc-progress-text"><?php _e('準備中...', 'utrust-order-payment-change'); ?></p>
+        </div>
+        
+        <div class="utopc-update-results" style="display: none;">
+            <h4><?php _e('更新結果：', 'utrust-order-payment-change'); ?></h4>
+            <div class="utopc-results-content"></div>
+        </div>
+    </div>
+    
+    <div class="utopc-dialog-buttons">
+        <button type="button" class="button button-primary" id="utopc-start-update">
+            <?php _e('開始更新', 'utrust-order-payment-change'); ?>
+        </button>
+        <button type="button" class="button" id="utopc-cancel-update" style="display: none;">
+            <?php _e('取消', 'utrust-order-payment-change'); ?>
+        </button>
+        <button type="button" class="button" onclick="jQuery('#utopc-update-old-orders-dialog').dialog('close');">
+            <?php _e('關閉', 'utrust-order-payment-change'); ?>
         </button>
     </div>
 </div>

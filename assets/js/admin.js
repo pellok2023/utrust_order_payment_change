@@ -49,6 +49,17 @@ jQuery(document).ready(function($) {
         }
     });
     
+    $('#utopc-update-old-orders-dialog').dialog({
+        autoOpen: false,
+        modal: true,
+        width: 600,
+        resizable: false,
+        close: function() {
+            // 重置更新狀態
+            resetUpdateDialog();
+        }
+    });
+    
     // 新增帳號按鈕
     $('#utopc-add-account').on('click', function() {
         isEditMode = false;
@@ -118,6 +129,11 @@ jQuery(document).ready(function($) {
         loadLogs();
     });
     
+    // 更新舊訂單按鈕
+    $('#utopc-update-old-orders').on('click', function() {
+        $('#utopc-update-old-orders-dialog').dialog('open');
+    });
+    
     // 移除外掛按鈕
     $('#utopc-delete-plugin').on('click', function() {
         $('#utopc-delete-plugin-dialog').dialog('open');
@@ -159,6 +175,16 @@ jQuery(document).ready(function($) {
     // 重新整理日誌按鈕
     $(document).on('click', '#utopc-refresh-logs', function() {
         loadLogs();
+    });
+    
+    // 開始更新舊訂單按鈕
+    $('#utopc-start-update').on('click', function() {
+        startUpdateOldOrders();
+    });
+    
+    // 取消更新按鈕
+    $('#utopc-cancel-update').on('click', function() {
+        cancelUpdateOldOrders();
     });
     
     // 表單提交
@@ -578,6 +604,125 @@ jQuery(document).ready(function($) {
         setTimeout(function() {
             notice.fadeOut();
         }, 5000);
+    }
+    
+    /**
+     * 開始更新舊訂單
+     */
+    function startUpdateOldOrders() {
+        var batchSize = $('#utopc-batch-size').val();
+        var offset = 0;
+        
+        // 顯示進度條
+        $('.utopc-update-settings').hide();
+        $('.utopc-update-progress').show();
+        $('.utopc-update-results').hide();
+        
+        // 更新按鈕狀態
+        $('#utopc-start-update').hide();
+        $('#utopc-cancel-update').show();
+        
+        // 開始批量更新
+        updateOldOrdersBatch(batchSize, offset);
+    }
+    
+    /**
+     * 批量更新舊訂單
+     */
+    function updateOldOrdersBatch(batchSize, offset) {
+        $.ajax({
+            url: utopc_ajax.ajax_url,
+            type: 'POST',
+            data: {
+                action: 'utopc_update_old_orders',
+                batch_size: batchSize,
+                offset: offset,
+                nonce: utopc_ajax.nonce
+            },
+            success: function(response) {
+                if (response.success) {
+                    var data = response.data;
+                    
+                    // 更新進度條
+                    updateProgress(data.processed, data.updated);
+                    
+                    // 如果還有更多訂單需要處理，繼續下一批
+                    if (data.has_more) {
+                        setTimeout(function() {
+                            updateOldOrdersBatch(batchSize, data.next_offset);
+                        }, 1000); // 延遲1秒避免伺服器負載過重
+                    } else {
+                        // 更新完成
+                        completeUpdate(data);
+                    }
+                } else {
+                    showError('更新失敗：' + response.data);
+                    resetUpdateDialog();
+                }
+            },
+            error: function() {
+                showError('更新舊訂單時發生錯誤');
+                resetUpdateDialog();
+            }
+        });
+    }
+    
+    /**
+     * 更新進度條
+     */
+    function updateProgress(processed, updated) {
+        var progressText = '已處理 ' + processed + ' 筆訂單，更新了 ' + updated + ' 筆';
+        $('.utopc-progress-text').text(progressText);
+        
+        // 簡單的進度條動畫
+        var progressFill = $('.utopc-progress-fill');
+        var currentWidth = progressFill.width();
+        var newWidth = Math.min(currentWidth + 10, 100);
+        progressFill.css('width', newWidth + '%');
+    }
+    
+    /**
+     * 完成更新
+     */
+    function completeUpdate(data) {
+        $('.utopc-update-progress').hide();
+        $('.utopc-update-results').show();
+        
+        var resultsHtml = '<p>更新完成！</p>';
+        resultsHtml += '<p>總共處理了 ' + data.processed + ' 筆訂單，更新了 ' + data.updated + ' 筆</p>';
+        
+        $('.utopc-results-content').html(resultsHtml);
+        
+        // 更新按鈕狀態
+        $('#utopc-start-update').text('重新開始').show();
+        $('#utopc-cancel-update').hide();
+        
+        showSuccess('舊訂單更新完成！');
+    }
+    
+    /**
+     * 取消更新
+     */
+    function cancelUpdateOldOrders() {
+        // 這裡可以添加取消邏輯，但由於是批量處理，我們只能重置對話框
+        resetUpdateDialog();
+        showError('更新已取消');
+    }
+    
+    /**
+     * 重置更新對話框
+     */
+    function resetUpdateDialog() {
+        $('.utopc-update-settings').show();
+        $('.utopc-update-progress').hide();
+        $('.utopc-update-results').hide();
+        
+        $('#utopc-start-update').text('開始更新').show();
+        $('#utopc-cancel-update').hide();
+        
+        // 重置進度條
+        $('.utopc-progress-fill').css('width', '0%');
+        $('.utopc-progress-text').text('準備中...');
     }
     
     /**
