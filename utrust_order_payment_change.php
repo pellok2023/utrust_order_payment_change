@@ -2,8 +2,8 @@
 /**
  * Plugin Name: UTrust Order Payment Change
  * Plugin URI: https://utrust.com
- * Description: 自動管理多個金流帳號，根據金額上限自動切換金流服務商
- * Version: 1.2.1
+ * Description: 自動管理多個金流帳號，根據金額上限自動切換金流服務商，支援藍新金流退款功能
+ * Version: 1.3.0
  * Author: UTrust
  * Author URI: https://utrust.com
  * Text Domain: utrust-order-payment-change
