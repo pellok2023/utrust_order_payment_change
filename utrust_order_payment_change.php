@@ -99,6 +99,12 @@ class UTrust_Order_Payment_Change {
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-hpos-helper.php';
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-order-columns.php';
         
+        // 載入退款相關模組
+        require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-newebpay-refund-api.php';
+        require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-refund-manager.php';
+        require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-gateway-extension.php';
+        require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-refund-button.php';
+        
         // 確保資料表存在
         UTOPC_Database::ensure_tables_exist();
         
@@ -128,6 +134,11 @@ class UTrust_Order_Payment_Change {
         
         // 初始化訂單列表欄位模組
         UTOPC_Order_Columns::get_instance();
+        
+        // 初始化退款相關模組
+        UTOPC_Refund_Manager::get_instance();
+        UTOPC_Gateway_Extension::get_instance();
+        UTOPC_Refund_Button::get_instance();
     }
     
     public function activate() {

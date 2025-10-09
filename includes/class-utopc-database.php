@@ -1100,6 +1100,151 @@ class UTOPC_Database {
     }
     
     /**
+     * 根據帳號 ID 取得金流帳號資訊（退款功能專用）
+     * 
+     * @param int $account_id 帳號 ID
+     * @return object|null 帳號資訊物件或 null
+     */
+    public function get_account_by_id($account_id) {
+        if (empty($account_id)) {
+            return null;
+        }
+        
+        return $this->get_account($account_id);
+    }
+    
+    /**
+     * 記錄退款歷史（可選功能）
+     * 
+     * @param int $order_id 訂單 ID
+     * @param int $account_id 金流帳號 ID
+     * @param float $amount 退款金額
+     * @param string $reason 退款原因
+     * @param string $status 退款狀態
+     * @param string $api_response API 回應（JSON 格式）
+     * @return bool|WP_Error
+     */
+    public function record_refund_history($order_id, $account_id, $amount, $reason = '', $status = 'success', $api_response = '') {
+        // 檢查是否有退款歷史資料表，如果沒有則建立
+        $this->ensure_refund_history_table_exists();
+        
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'utopc_refund_history';
+        
+        $result = $wpdb->insert(
+            $table_name,
+            array(
+                'order_id' => intval($order_id),
+                'account_id' => intval($account_id),
+                'amount' => floatval($amount),
+                'reason' => sanitize_text_field($reason),
+                'status' => sanitize_text_field($status),
+                'api_response' => sanitize_textarea_field($api_response),
+                'created_at' => current_time('mysql')
+            ),
+            array(
+                '%d', '%d', '%f', '%s', '%s', '%s', '%s'
+            )
+        );
+        
+        if ($result === false) {
+            return new WP_Error('db_error', '記錄退款歷史失敗：' . $wpdb->last_error);
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 確保退款歷史資料表存在
+     */
+    private function ensure_refund_history_table_exists() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'utopc_refund_history';
+        
+        // 檢查資料表是否存在
+        $table_exists = $wpdb->get_var($wpdb->prepare(
+            "SHOW TABLES LIKE %s",
+            $table_name
+        ));
+        
+        if ($table_exists !== $table_name) {
+            $this->create_refund_history_table();
+        }
+    }
+    
+    /**
+     * 建立退款歷史資料表
+     */
+    private function create_refund_history_table() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'utopc_refund_history';
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        $sql = "CREATE TABLE $table_name (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            order_id bigint(20) NOT NULL,
+            account_id mediumint(9) NOT NULL,
+            amount decimal(15,2) NOT NULL,
+            reason text DEFAULT NULL,
+            status varchar(50) NOT NULL DEFAULT 'success',
+            api_response longtext DEFAULT NULL,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_order_id (order_id),
+            KEY idx_account_id (account_id),
+            KEY idx_created_at (created_at)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+    
+    /**
+     * 取得退款歷史記錄
+     * 
+     * @param int $order_id 訂單 ID（可選）
+     * @param int $account_id 帳號 ID（可選）
+     * @param int $limit 限制筆數
+     * @return array 退款歷史記錄陣列
+     */
+    public function get_refund_history($order_id = null, $account_id = null, $limit = 50) {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'utopc_refund_history';
+        
+        $where_conditions = array();
+        $where_values = array();
+        
+        if ($order_id) {
+            $where_conditions[] = 'order_id = %d';
+            $where_values[] = $order_id;
+        }
+        
+        if ($account_id) {
+            $where_conditions[] = 'account_id = %d';
+            $where_values[] = $account_id;
+        }
+        
+        $where_clause = '';
+        if (!empty($where_conditions)) {
+            $where_clause = 'WHERE ' . implode(' AND ', $where_conditions);
+        }
+        
+        $query = "SELECT * FROM $table_name $where_clause ORDER BY created_at DESC LIMIT %d";
+        $where_values[] = $limit;
+        
+        if (!empty($where_values)) {
+            $query = $wpdb->prepare($query, $where_values);
+        } else {
+            $query = $wpdb->prepare($query, $limit);
+        }
+        
+        return $wpdb->get_results($query);
+    }
+    
+    /**
      * 取得資料表名稱
      */
     public function get_table_name() {

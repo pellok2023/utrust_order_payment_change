@@ -33,6 +33,10 @@ class UTOPC_Order_Monitor {
         
         // 監控訂單狀態變更（從其他狀態變更為完成）
         add_action('woocommerce_order_status_changed', array($this, 'handle_order_status_changed'), 10, 4);
+        
+        // 監控退款事件（新增）
+        add_action('woocommerce_order_refunded', array($this, 'handle_order_refunded'), 10, 2);
+        add_action('woocommerce_refund_created', array($this, 'handle_refund_created'), 10, 2);
     }
     
     /**
@@ -127,7 +131,7 @@ class UTOPC_Order_Monitor {
     }
     
     /**
-     * 處理退款訂單
+     * 處理退款訂單（舊版邏輯，保留向後相容）
      */
     private function handle_refund_order($order_id, $refund_amount) {
         // 取得目前啟用的金流帳號
@@ -151,6 +155,109 @@ class UTOPC_Order_Monitor {
         
         // 記錄成功日誌
         $this->log_success("退款訂單 {$order_id}，金額 {$refund_amount} 已從金流帳號 {$active_account->account_name} 扣除");
+    }
+    
+    /**
+     * 處理訂單退款事件（新版邏輯）
+     * 
+     * @param int $order_id 訂單 ID
+     * @param int $refund_id 退款 ID
+     */
+    public function handle_order_refunded($order_id, $refund_id) {
+        $order = $this->hpos_helper->get_order($order_id);
+        $refund = wc_get_order($refund_id);
+        
+        if (!$order || !$refund) {
+            $this->log_error("無法取得訂單或退款物件", [
+                'order_id' => $order_id,
+                'refund_id' => $refund_id
+            ]);
+            return;
+        }
+        
+        // 檢查是否為藍新金流訂單
+        if (!$this->is_newebpay_order($order)) {
+            $this->log_info("非藍新金流訂單，跳過處理", [
+                'order_id' => $order_id,
+                'payment_method' => $order->get_payment_method()
+            ]);
+            return;
+        }
+        
+        // 取得退款金額
+        $refund_amount = $refund->get_amount();
+        
+        if ($refund_amount <= 0) {
+            $this->log_warning("退款金額無效", [
+                'order_id' => $order_id,
+                'refund_id' => $refund_id,
+                'amount' => $refund_amount
+            ]);
+            return;
+        }
+        
+        // 取得訂單當時使用的金流帳號
+        $account = $this->get_order_payment_account($order);
+        
+        if (!$account) {
+            // 如果沒有記錄，使用目前啟用的帳號
+            $account = $this->database->get_active_account();
+            
+            if (!$account) {
+                $this->log_error("無法取得金流帳號資訊", [
+                    'order_id' => $order_id,
+                    'refund_id' => $refund_id
+                ]);
+                return;
+            }
+        }
+        
+        // 從對應帳號的當月累計金額中扣除退款金額
+        $result = $this->database->update_monthly_amount($account->id, -$refund_amount);
+        
+        if ($result === false) {
+            $this->log_error("更新金流帳號金額失敗", [
+                'order_id' => $order_id,
+                'account_id' => $account->id,
+                'amount' => $refund_amount
+            ]);
+            return;
+        }
+        
+        // 記錄退款歷史
+        $this->record_refund_history($order, $refund, $account, $refund_amount);
+        
+        // 記錄成功日誌
+        $this->log_success("退款處理完成", [
+            'order_id' => $order_id,
+            'refund_id' => $refund_id,
+            'amount' => $refund_amount,
+            'account_id' => $account->id,
+            'account_name' => $account->account_name
+        ]);
+    }
+    
+    /**
+     * 處理退款建立事件（備用）
+     * 
+     * @param int $refund_id 退款 ID
+     * @param array $args 退款參數
+     */
+    public function handle_refund_created($refund_id, $args) {
+        $refund = wc_get_order($refund_id);
+        
+        if (!$refund) {
+            return;
+        }
+        
+        $order = wc_get_order($refund->get_parent_id());
+        
+        if (!$order || !$this->is_newebpay_order($order)) {
+            return;
+        }
+        
+        // 延遲執行，確保訂單狀態已更新
+        wp_schedule_single_event(time() + 5, 'utopc_process_delayed_refund', array($order->get_id(), $refund_id));
     }
     
     /**
@@ -236,17 +343,23 @@ class UTOPC_Order_Monitor {
     }
     
     /**
-     * 記錄日誌
+     * 記錄日誌（支援上下文）
      */
-    private function log_message($level, $message) {
+    private function log_message($level, $message, $context = []) {
         if (!get_option('utopc_enable_logging', 'yes')) {
             return;
+        }
+        
+        $log_message = $message;
+        
+        if (!empty($context)) {
+            $log_message .= ' | Context: ' . wp_json_encode($context);
         }
         
         $log_entry = array(
             'timestamp' => current_time('mysql'),
             'level' => $level,
-            'message' => $message
+            'message' => $log_message
         );
         
         $logs = get_option('utopc_logs', array());
@@ -311,4 +424,80 @@ class UTOPC_Order_Monitor {
         $processed_orders = get_option('utopc_processed_orders', array());
         return count($processed_orders);
     }
+    
+    /**
+     * 檢查是否為藍新金流訂單
+     * 
+     * @param WC_Order $order 訂單物件
+     * @return bool
+     */
+    private function is_newebpay_order($order) {
+        if (!$order || !is_object($order)) {
+            return false;
+        }
+        
+        $payment_method = $order->get_payment_method();
+        
+        $newebpay_methods = array(
+            'ry_newebpay',
+            'ry_newebpay_atm',
+            'ry_newebpay_cc',
+            'ry_newebpay_cvs',
+            'ry_newebpay_webatm',
+            'ry_newebpay_barcode',
+            'ry_newebpay_credit_installment'
+        );
+        
+        return in_array($payment_method, $newebpay_methods);
+    }
+    
+    /**
+     * 取得訂單的金流帳號資訊
+     * 
+     * @param WC_Order $order 訂單物件
+     * @return object|null
+     */
+    private function get_order_payment_account($order) {
+        $account_id = $order->get_meta('_utopc_payment_account_id', true);
+        
+        if (!$account_id) {
+            return null;
+        }
+        
+        return $this->database->get_account_by_id($account_id);
+    }
+    
+    /**
+     * 記錄退款歷史
+     * 
+     * @param WC_Order $order 訂單物件
+     * @param WC_Order_Refund $refund 退款物件
+     * @param object $account 金流帳號物件
+     * @param float $amount 退款金額
+     */
+    private function record_refund_history($order, $refund, $account, $amount) {
+        $result = $this->database->record_refund_history(
+            $order->get_id(),
+            $account->id,
+            $amount,
+            $refund->get_reason(),
+            'success',
+            ''
+        );
+        
+        if (is_wp_error($result)) {
+            $this->log_error("記錄退款歷史失敗", [
+                'order_id' => $order->get_id(),
+                'error' => $result->get_error_message()
+            ]);
+        }
+    }
+    
+    /**
+     * 記錄警告日誌
+     */
+    private function log_warning($message, $context = []) {
+        $this->log_message('WARNING', $message, $context);
+    }
+    
 }
