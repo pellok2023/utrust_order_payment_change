@@ -126,6 +126,13 @@ class UTOPC_Order_Monitor {
         // 確保訂單有記錄金流資訊（如果沒有則記錄）
         if (!$order->get_meta('_utopc_payment_account_id')) {
             $this->record_payment_account_info($order, $active_account);
+        } else {
+            // 如果已有金流資訊，使用原本記錄的帳號來更新金額
+            $original_account_id = $order->get_meta('_utopc_payment_account_id');
+            $original_account = $this->database->get_account($original_account_id);
+            if ($original_account) {
+                $active_account = $original_account;
+            }
         }
         
         // 更新金流帳號的當月累計金額
