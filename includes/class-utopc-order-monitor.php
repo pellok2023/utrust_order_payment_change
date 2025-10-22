@@ -27,6 +27,10 @@ class UTOPC_Order_Monitor {
         $this->payment_switcher = UTOPC_Payment_Switcher::get_instance();
         $this->hpos_helper = UTOPC_HPOS_Helper::get_instance();
         
+        // 監控訂單建立，立即記錄金流資訊
+        add_action('woocommerce_new_order', array($this, 'handle_new_order'), 10, 1);
+        add_action('woocommerce_checkout_order_processed', array($this, 'handle_checkout_order_processed'), 10, 1);
+        
         // 監控訂單狀態變更
         add_action('woocommerce_order_status_completed', array($this, 'handle_order_completed'), 10, 1);
         add_action('woocommerce_order_status_processing', array($this, 'handle_order_completed'), 10, 1);
@@ -37,6 +41,54 @@ class UTOPC_Order_Monitor {
         // 監控退款事件（新增）
         add_action('woocommerce_order_refunded', array($this, 'handle_order_refunded'), 10, 2);
         add_action('woocommerce_refund_created', array($this, 'handle_refund_created'), 10, 2);
+    }
+    
+    /**
+     * 處理新訂單建立
+     */
+    public function handle_new_order($order_id) {
+        $this->record_payment_info_for_order($order_id);
+    }
+    
+    /**
+     * 處理結帳訂單處理完成
+     */
+    public function handle_checkout_order_processed($order_id) {
+        $this->record_payment_info_for_order($order_id);
+    }
+    
+    /**
+     * 為訂單記錄金流資訊
+     */
+    private function record_payment_info_for_order($order_id) {
+        $order = $this->hpos_helper->get_order($order_id);
+        
+        if (!$order) {
+            return;
+        }
+        
+        // 檢查是否為 NewebPay 相關付款方式
+        if (!$this->is_newebpay_order($order)) {
+            return;
+        }
+        
+        // 檢查是否已經記錄過金流資訊
+        if ($order->get_meta('_utopc_payment_account_id')) {
+            return;
+        }
+        
+        // 取得目前啟用的金流帳號
+        $active_account = $this->database->get_active_account();
+        
+        if (!$active_account) {
+            $this->log_error("訂單 {$order_id} 建立，但沒有啟用的金流帳號");
+            return;
+        }
+        
+        // 記錄訂單使用的金流帳戶資訊
+        $this->record_payment_account_info($order, $active_account);
+        
+        $this->log_success("訂單 {$order_id} 建立，已記錄金流帳號資訊：{$active_account->account_name}");
     }
     
     /**
@@ -71,6 +123,11 @@ class UTOPC_Order_Monitor {
             return;
         }
         
+        // 確保訂單有記錄金流資訊（如果沒有則記錄）
+        if (!$order->get_meta('_utopc_payment_account_id')) {
+            $this->record_payment_account_info($order, $active_account);
+        }
+        
         // 更新金流帳號的當月累計金額
         $result = $this->database->update_monthly_amount($active_account->id, $order_total);
         
@@ -78,9 +135,6 @@ class UTOPC_Order_Monitor {
             $this->log_error("更新金流帳號 {$active_account->id} 金額失敗");
             return;
         }
-        
-        // 記錄訂單使用的金流帳戶資訊
-        $this->record_payment_account_info($order, $active_account);
         
         // 標記訂單已處理
         $this->mark_order_processed($order_id);
