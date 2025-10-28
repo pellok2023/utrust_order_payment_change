@@ -105,6 +105,9 @@ class UTrust_Order_Payment_Change {
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-gateway-extension.php';
         require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-refund-button.php';
         
+        // 載入藍新金流回傳處理器（解決多金流帳號切換後的驗證問題）
+        require_once UTOPC_PLUGIN_PATH . 'includes/class-utopc-newebpay-response-handler.php';
+        
         // 確保資料表存在
         UTOPC_Database::ensure_tables_exist();
         
@@ -139,6 +142,9 @@ class UTrust_Order_Payment_Change {
         UTOPC_Refund_Manager::get_instance();
         UTOPC_Gateway_Extension::get_instance();
         UTOPC_Refund_Button::get_instance();
+        
+        // 初始化藍新金流回傳處理器（解決多金流帳號切換後的驗證問題）
+        UTOPC_NewebPay_Response_Handler::get_instance();
     }
     
     public function activate() {
